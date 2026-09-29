@@ -136,27 +136,40 @@ se reconecta solo.
 | `sessions` | `session_id` | proyecto, `cwd`, título (`ai-title`/`custom-title`), inicio, última actividad |
 | `agents` | `(session_id, agent_id)` | `parent_agent_id` (NULL = raíz/huérfano), `parent_tool_use_id`, `agent_type`, `description`, `spawn_depth` |
 | `requests` | `request_id` | `session_id`, `agent_id`, hora, modelo, `input`, `output`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `stop_reason` |
-| `events` | `id INTEGER PRIMARY KEY AUTOINCREMENT` | `(uuid, block)` UNIQUE, `session_id`, `agent_id`, hora, `kind`, `tool_name`, `tool_use_id`, `is_error`, `input_hash`, `request_id`, `file_path`, `byte_offset`, `length` |
+| `events` | `id INTEGER PRIMARY KEY AUTOINCREMENT` | `(file_path, byte_offset, block)` UNIQUE, `uuid` (solo verificación), `session_id`, `agent_id`, hora, `kind`, `tool_name`, `tool_use_id`, `is_error`, `input_hash`, `request_id`, `file_path`, `byte_offset`, `length` |
 
-Índices: `events(agent_id, id)`, `events(tool_use_id)`, `agents(session_id)`,
+Índices: `events(agent_id, id)`, `events(tool_use_id)`, `events(uuid)`, `events(request_id)`,
+`agents(session_id)`,
 `agents(session_id, parent_agent_id)`.
 
-**Claves globales (decisiones con datos):**
-- `events (uuid, block)` UNIQUE **global**: de 68.630 `uuid` en disco, ninguno aparece en dos ficheros
-  [verificado].
+**Claves (decisiones con datos):**
+- **Idempotencia de `events` por posición, no por `uuid`:** `(file_path, byte_offset, block)`.
+  El `uuid` **no es único** [verificado]: dentro de `3416476c` hay 16.878 `uuid` y solo 16.874
+  distintos (4 repetidos con contenido distinto, todos `attachment`). La posición siempre es
+  única, existe para cualquier línea (lleve `uuid` o no) y es estable porque los JSONL solo
+  crecen. Al detectar truncado se **borran primero los eventos de ese fichero** y se reprocesa
+  desde 0, así que las posiciones viejas nunca conviven con las nuevas. El `uuid` se guarda
+  (con índice) solo para verificar el contenido bajo demanda (§6.5).
 - `requests.request_id` PK **global**, a propósito **no** compuesta con `session_id`: 1.274
   `requestId` aparecen en dos sesiones [verificado], todos entre `7bc000bb` y `3416476c`. La
-  segunda es una **copia** de la primera (fork o `--resume`): Claude Code copia las peticiones
-  con `uuid` nuevos pero el mismo `requestId`. Con una clave compuesta, el coste total contaría
-  dos veces cada petición heredada. Con clave global se cuenta una vez; `requests.session_id`
-  es la sesión **dueña** (la que la originó) y los eventos de la copia que apuntan a una
-  petición de otra sesión se muestran como **heredados** (visibles, sin sumar coste a la copia).
-  [sin verificar] regla exacta para decidir la dueña si la copia se ingiere antes (F0).
+  segunda es una **copia** de la primera: comparte 0 `uuid` (los regenera), el `usage` es
+  idéntico en las 3.407 líneas copiadas y 1.273 de las 1.274 peticiones conservan su
+  `timestamp` original [verificado]. Con clave compuesta el coste total contaría dos veces cada
+  petición heredada; con clave global se cuenta una vez.
+- **Sesión dueña** de una petición = la sesión que **empezó antes** (primer `timestamp` del
+  fichero principal; `7bc000bb` 14:42 frente a `3416476c` 14:47). No depende del orden de
+  ingesta: si la copia se procesa primero y luego aparece una sesión más antigua con la misma
+  petición, la dueña se actualiza. En la copia, esos eventos se muestran como **heredados**
+  (visibles, sin sumar coste).
+- **Borrado y copias:** al desaparecer un fichero se borran sus eventos; después, cada petición
+  cuya dueña ya no existe se **reasigna** a la sesión viva más antigua que aún tenga eventos
+  apuntándola, y solo se borra si ninguna la referencia. Así, cuando Claude Code borre la
+  original a los 30 días, la copia recupera el coste de lo heredado en vez de quedarse a 0.
 
 ### 6.3 Reglas de ingesta
 
-- **Idempotencia:** clave `(uuid, block)` en `events` (el `uuid` lo llevan todas las líneas `user`, `assistant`,
-  `system` y `attachment` [verificado]) e `INSERT OR IGNORE`. Reprocesar nunca duplica.
+- **Idempotencia:** clave `(file_path, byte_offset, block)` en `events` e `INSERT OR IGNORE`
+  (ver "Claves" arriba). Reprocesar nunca duplica, incluidas las líneas sin `uuid`.
 - **Tokens una vez por petición:** Claude Code parte cada respuesta en varias líneas (una por
   bloque) y **repite el `usage` completo en cada una** [verificado: 1.036 de 1.036 peticiones
   multilínea]. Sumar línea a línea duplica o triplica el coste. Por eso los tokens viven en
@@ -193,8 +206,8 @@ se reconecta solo.
 | tipo o subtipo en la lista de ignorados | no crea evento; suma al contador de ignorados |
 | cualquier otra cosa | `unknown` |
 
-Una línea puede producir varios eventos (una por bloque); la clave de idempotencia es
-`(uuid, índice de bloque)`.
+Una línea puede producir varios eventos (uno por bloque); `block` es el índice del bloque
+dentro de la línea.
 
 ### 6.4 Contrato de la caché
 
@@ -321,7 +334,7 @@ Los umbrales viven en un solo bloque de constantes.
 | Riesgo | Impacto | Mitigación |
 |---|---|---|
 | Claude Code cambia el formato JSONL | panel roto o números falsos | parser tolerante, `unknown` visible, tests, `parser_version` |
-| Discrepancia del oráculo en `3416476c` (`cost-state` habla de `claude-opus-5-5`, el JSONL solo tiene `claude-opus-5` y otras cifras) | el oráculo no es fiable en sesiones copiadas | [verificado] `3416476c` comparte 1.274 `requestId` con `7bc000bb`: es una copia. [sin verificar] qué representa exactamente su `cost-state`. Se trata como *known issue* (ver §8) |
+| Discrepancia del oráculo en `3416476c` (`cost-state` habla de `claude-opus-5-5`, el JSONL solo tiene `claude-opus-5` y otras cifras) | el oráculo no es fiable en sesiones copiadas | [verificado] `3416476c` es copia de `7bc000bb`. Las sesiones copia se excluyen del test oráculo (§8) |
 | Precios desactualizados | coste estimado erróneo | `prices.toml` editable, `?` para modelos desconocidos, etiqueta "estimado" |
 | Llamadas internas no visibles en JSONL | coste inferior al real | mostrar "coste interno no desglosado" |
 | Rendimiento de `stat()` en Windows con antivirus | CPU / latencia | medir; subir intervalo si hace falta |
