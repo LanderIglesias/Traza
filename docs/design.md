@@ -1,0 +1,307 @@
+# traza — Documento de diseño
+
+> Estado: **borrador pendiente de aprobación** · Fecha: 2026-09-29
+> Todo lo marcado como **[verificado]** se ha comprobado en la documentación oficial
+> (code.claude.com/docs) o en los ficheros reales de `~/.claude/` de esta máquina.
+> Lo marcado como **[sin verificar]** es una hipótesis y tiene una tarea asignada en `plan.md`.
+
+---
+
+## 1. Objetivo
+
+Un panel web **local** que muestra, en tiempo real y sobre el historial reciente,
+qué hacen por dentro las sesiones de Claude Code:
+
+- qué agentes y subagentes existen, quién lanzó a quién y en qué estado están;
+- cuántos tokens y cuánto **coste estimado** consume cada petición, agente, sesión y modelo;
+- qué herramientas usa cada agente, con qué argumentos y qué resultado obtiene;
+- **si un agente está trabajando bien**: su encargo y lo que devolvió, lado a lado,
+  y señales automáticas deterministas (errores, bucles, reintentos fallidos, herramientas colgadas).
+
+**Ángulo diferencial frente a Agent View / claude-code-tracer y similares:** no es solo
+"cuánto gasté", es una **herramienta para juzgar la calidad del trabajo de cada subagente**,
+con **exactitud demostrada** (los tokens cuadran al token con el cálculo propio de Claude Code,
+ver §8) y honesta sobre lo que no sabe (`?` en vez de cifras inventadas).
+
+## 2. Usuarios
+
+- **Usuario principal:** el autor, a diario, mientras trabaja con Claude Code (sobre todo desde
+  la extensión de VS Code) y lanza muchos subagentes. Necesita ver coste por subagente y juzgar
+  si su output es bueno.
+- **Usuario secundario:** reclutador técnico / revisor de portfolio. Necesita entenderlo en 30 s
+  (README + GIF) e instalarlo con un comando.
+
+## 3. Fuera de alcance (decisiones explícitas)
+
+- **No** muestra el razonamiento interno del modelo: los bloques `thinking` se guardan en disco
+  **con el texto vacío** [verificado: 604 de 604 vacíos en una sesión]. traza muestra acciones y
+  resultados, no pensamientos.
+- **No** es un "agent OS": no lanza agentes, no tiene memoria, scheduling ni permisos.
+  Es la capa de observabilidad.
+- **No** conserva historial más allá de lo que Claude Code mantiene en disco (ver §6.4).
+- **No** es multiusuario ni accesible desde la red.
+
+## 4. Fuentes de datos
+
+### 4.1 Elegida para v1: ficheros JSONL de sesión
+
+[verificado en disco]
+- Sesión principal: `~/.claude/projects/<proyecto>/<sessionId>.jsonl`.
+- Subagentes: `~/.claude/projects/<proyecto>/<sessionId>/subagents/agent-<id>.jsonl` +
+  `agent-<id>.meta.json` con `agentType`, `description`, `toolUseId` (la llamada del padre que lo
+  lanzó) y `spawnDepth`.
+- Cada línea `assistant` trae `message.model`, `message.usage` (input, output, cache read, cache
+  write separada en 5 min / 1 h, thinking tokens), `stop_reason`, `requestId` y `uuid`.
+
+**Por qué:** cero configuración (no toca `settings.json`), da el historial gratis (sesión viva y
+antigua se leen con el mismo código) y es la única fuente con el **contenido completo** (encargos,
+argumentos, resultados), que es lo que hace falta para juzgar calidad.
+
+**Qué se pierde:**
+- Es un formato **interno, no documentado**; una actualización puede romper el parser
+  (mitigación: parser tolerante, tipos desconocidos contados y visibles, tests sobre fixtures).
+- El estado "esperando tu permiso" no es visible.
+- El estado "pensando" solo se deduce del `mtime` del fichero: las líneas parecen escribirse
+  al terminar cada respuesta, no en streaming [sin verificar del todo; ver plan F0].
+- Las llamadas internas de Claude Code (p. ej. a Haiku para títulos) **no aparecen** en el JSONL
+  [verificado: 15.777 tokens de Haiku en `cost-state`, 0 en el JSONL]. Se muestran como
+  "coste interno no desglosado" cuando se puede calcular la diferencia.
+
+### 4.2 Opcional v1.x: hooks HTTP
+
+[verificado en docs] Existen hooks `type: "http"` que hacen POST del JSON del evento a una URL;
+`PreToolUse`/`PostToolUse` se disparan también dentro de subagentes con `agent_id`/`agent_type`.
+Aportarían estado exacto al instante ("necesita input" vía `Notification`). Solo se implementan si
+tras usar v1 se echa de menos. Requiere modificar `settings.json` con instalador/desinstalador.
+[sin verificar] qué hace Claude Code si el servidor del hook está caído (¿espera al timeout?).
+
+### 4.3 Descartadas
+
+- **OpenTelemetry:** necesita receptor OTLP; su `cost_usd` también es "estimated cost" [verificado
+  en docs]; identifica subagentes por nombre, no por id, así que el cruce con el árbol es frágil.
+  Aporta poco sobre el JSONL.
+- **Proxy de la API:** intercepta tráfico con credenciales; riesgo desproporcionado.
+- **Escaneo de procesos:** no da información de agentes ni tokens.
+
+## 5. Arquitectura
+
+```
+~/.claude/projects/**/*.jsonl ──(1) watcher──▶ (2) parser ──▶ (3) SQLite (caché)
+                                                                   │
+                     Navegador ◀── SSE ── (4) FastAPI ◀────────────┘
+                   (5) HTML + CSS + JS modules
+```
+
+1. **Watcher** — tarea asíncrona dentro de FastAPI (sin hilos). Cada 0,5 s:
+   - `glob` de `*.jsonl` (nuevos ficheros);
+   - `os.stat()` de cada fichero registrado; si `(mtime, size)` no cambió, no lo abre;
+   - lee desde el offset guardado **solo líneas completas** (terminadas en `\n`); el resto queda
+     en un buffer por fichero;
+   - `size < offset` o `size == 0` → truncado: reprocesa desde 0;
+   - `FileNotFoundError` → borrado en cascada de sus datos + evento SSE de borrado;
+   - la carga inicial de un fichero grande (hay uno de 43 MB) va a `asyncio.to_thread` con
+     **su propia conexión** SQLite.
+   - Coste a vigilar: N `stat()` cada 0,5 s (antivirus en Windows). Se mide si la carpeta crece.
+2. **Parser** — funciones puras, sin I/O ni dependencias: línea JSON → registros para `requests`,
+   `events`, `agents`, `sessions`. Es la pieza con más tests.
+3. **SQLite** — caché desechable (ver §6.4), modo WAL, escrituras de un tick en **una transacción**
+   (`executemany`).
+4. **FastAPI** — sirve la página, la API JSON y un endpoint SSE.
+5. **Frontend** — HTML + CSS + JavaScript con `<script type="module">` nativo, sin framework ni
+   build. Justificación: árbol + timeline + contadores no necesitan React; así la instalación es
+   solo Python.
+
+**Por qué SSE y no WebSockets:** el flujo es unidireccional (servidor → navegador) y `EventSource`
+se reconecta solo.
+
+## 6. Modelo de datos
+
+### 6.1 Definiciones
+
+- **Sesión** = un `sessionId` = un fichero `<proyecto>/<sessionId>.jsonl`.
+- **Agente** = el hilo principal de la sesión (`agent_id = "main"`) o un subagente.
+- **Jerarquía** = el `toolUseId` del `meta.json` del subagente se busca entre los `tool_use` de
+  los ficheros de la sesión; el agente que lo contiene es el padre. Funciona a cualquier
+  `spawnDepth`. Si no se encuentra → **huérfano**, se muestra como raíz con "padre desconocido".
+- [sin verificar] si `claude --resume` escribe en el mismo fichero o crea otro (plan F0).
+
+### 6.2 Tablas
+
+| Tabla | Clave | Campos principales |
+|---|---|---|
+| `meta` | `key` | `cache_generation` (uuid al crear la BD), `parser_version` |
+| `files` | `path` | `session_id`, `agent_id`, `size`, `mtime`, `offset` |
+| `sessions` | `session_id` | proyecto, `cwd`, título (`ai-title`/`custom-title`), inicio, última actividad |
+| `agents` | `(session_id, agent_id)` | `parent_agent_id` (NULL = raíz/huérfano), `parent_tool_use_id`, `agent_type`, `description`, `spawn_depth` |
+| `requests` | `request_id` | `session_id`, `agent_id`, hora, modelo, `input`, `output`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `stop_reason` |
+| `events` | `id INTEGER PRIMARY KEY AUTOINCREMENT` | `uuid` UNIQUE, `session_id`, `agent_id`, hora, `kind`, `tool_name`, `tool_use_id`, `is_error`, `input_hash`, `request_id`, `file_path`, `byte_offset`, `length` |
+
+Índices: `events(agent_id, id)`, `events(tool_use_id)`, `agents(session_id)`,
+`agents(parent_agent_id)`.
+
+### 6.3 Reglas de ingesta
+
+- **Idempotencia:** clave `uuid` en `events` (lo llevan todas las líneas `user`, `assistant`,
+  `system` y `attachment` [verificado]) e `INSERT OR IGNORE`. Reprocesar nunca duplica.
+- **Tokens una vez por petición:** Claude Code parte cada respuesta en varias líneas (una por
+  bloque) y **repite el `usage` completo en cada una** [verificado: 1.036 de 1.036 peticiones
+  multilínea]. Sumar línea a línea duplica o triplica el coste. Por eso los tokens viven en
+  `requests` (una fila por `requestId`, `INSERT OR IGNORE`, gana la primera línea) y **nunca**
+  en `events`. El esquema impide reintroducir el bug.
+- `assistant` sin `requestId` (7 en disco) → no crea fila en `requests`, se cuenta como visible.
+  Sin `usage` (0 en disco) → tokens `NULL` ("no lo sé"), nunca 0.
+- Modelo `<synthetic>` (mensajes generados por Claude Code, 18 en disco, **ninguno con tokens**)
+  → precio explícito 0.
+- **Tipos de línea** [verificado, lista real de este disco]:
+  - *mostrados:* `user` (prompt o `tool_result`), `assistant` (texto, `tool_use`), `system`
+    subtipos `api_error` y `compact_boundary`, `ai-title`/`custom-title` (título).
+  - *conocidos e ignorados (contados):* `attachment` (casi todo salida de hooks),
+    `queue-operation`, `last-prompt`, `mode`, `file-history-snapshot`, `file-history-delta`,
+    `bridge-session`, `atis-latch`, `frame-link`, `artifact-comment-monitor`,
+    `artifact-autoreact-ledger`, `cost-state` (usado solo por el test oráculo), resto de subtipos
+    de `system`.
+  - *unknown:* todo lo demás, contado y visible.
+  - Proporción ignorada hoy: **63 % de las líneas, 41 % de los bytes**. v1 muestra el trabajo del
+    modelo, no toda la maquinaria de Claude Code; el README lo dice así.
+
+### 6.4 Contrato de la caché
+
+**La caché es desechable; la fuente de verdad son los JSONL.**
+- Se puede borrar `~/.traza/traza.db` en cualquier momento y se reconstruye.
+- No hay migraciones de esquema: si cambia el esquema o `parser_version`, se borra y reconstruye.
+- Espejo de lo que hay en disco: si Claude Code borra un JSONL, traza borra sus datos.
+- [verificado en docs, *Data usage*] Claude Code guarda los transcripts **30 días** por defecto
+  (`cleanupPeriodDays`); las sesiones de Claude Desktop/Cowork están exentas por defecto. La
+  ventana es **rodante**: el panel pierde datos continuamente, y conviven dos regímenes de
+  retención. Para más historial se sube `cleanupPeriodDays`.
+- Si algún día se quisiera historial propio (copiar JSONL), la caché pasaría a ser un archivo
+  con migraciones: **es otro producto**, no una opción.
+
+### 6.5 Contenido bajo demanda
+
+El contenido pesado (argumentos y resultados de herramientas, textos) **no se copia** a SQLite.
+Cada evento guarda `(file_path, byte_offset, length)`; al desplegarlo, `GET /content?ids=…`
+agrupa por fichero, ordena offsets y lee. Se verifica que el `uuid` de la línea leída coincide;
+si no (fichero reescrito) o si el fichero desapareció entre tick y clic → **"contenido no
+disponible"**, un único estado de error.
+
+### 6.6 Coste
+
+- Calculado **al consultar** desde `requests` × `prices.toml`; no se almacena. Corregir un precio
+  corrige todo el historial.
+- Clave de precio: modelo tras **quitar solo el sufijo de fecha** (`claude-haiku-4-5-20251001`
+  → `claude-haiku-4-5`). Nada más se fusiona: `claude-opus-5` y `claude-opus-5-5` son modelos
+  distintos.
+- Modelo sin precio → `?`, nunca 0.
+- Se etiqueta siempre **"coste estimado"**, con tooltip: precios públicos actuales aplicados a
+  sesiones pasadas; no es la factura.
+- Los precios se verifican contra la referencia oficial al implementar, no de memoria.
+
+## 7. Interfaz
+
+```
+┌ Sesiones ──────────┬ Árbol de agentes ─────────────┬ Vista de juicio ──────────────┐
+│ ● CV update  $1.92 │ ▼ main      inactivo  $0.40   │ ENCARGO                       │
+│ ○ joblens    $0.15 │   ├ Explore ✓        $0.31    │ turno 3 ▸ (plegado)           │
+│                    │   ├ marketing ⚙ Bash $1.21    │ 14:02 Read cv.md       ✓      │
+│                    │   │   ⚠ reintento fallido     │ 14:03 Bash pytest      ✗      │
+│                    │   └ reviewer ✓       $0.00    │ RESULTADO devuelto al padre   │
+└────────────────────┴───────────────────────────────┴───────────────────────────────┘
+ salud del parser: 0 unknown · 13 tipos ignorados (53.874 líneas) · coste interno no desglosado
+```
+
+- **Sesiones:** vivas arriba; título, proyecto, estado, coste estimado, última actividad.
+- **Árbol:** colapsable; el estado de colapsado vive en memoria del JS y los ticks SSE no lo
+  resetean. Coste: **propio en grande**; en nodos con hijos, **acumulado pequeño en gris**.
+  Columna ordenable **coste por token de salida**.
+- **Vista de juicio:** encargo arriba, timeline de herramientas en medio, resultado devuelto al
+  padre abajo. Agrupada por turno, turnos cerrados plegados, últimos 50 turnos + "cargar
+  anteriores" (sin virtual scrolling en v1).
+- **Barra de salud del parser:** global, siempre visible.
+
+### 7.1 Estados de agente
+
+| Estado | Regla | Tipo |
+|---|---|---|
+| Herramienta en vuelo | último `tool_use` sin `tool_result` casado | exacto |
+| Pensando | `mtime` reciente y último evento no es `tool_use` | heurístico |
+| Esperando / inactivo | `mtime` antiguo y `stop_reason = end_turn` | heurístico |
+| Terminado (solo subagentes) | su `toolUseId` aparece como `tool_result` en el padre | exacto |
+
+El agente principal nunca está "terminado": está "inactivo".
+
+### 7.2 Señales automáticas (deterministas, con test cada una)
+
+Se muestran como **señal**, no veredicto; al pulsarlas llevan a los eventos que las causan.
+Los umbrales viven en un solo bloque de constantes.
+
+| Señal | Regla | Muestra alerta |
+|---|---|---|
+| Error de herramienta | `tool_result.is_error` | sí |
+| `api_error` / compactación | subtipos de `system` | sí |
+| Bucle | mismo agente, misma herramienta, mismo hash de JSON canónico (claves ordenadas, sin espacios) ≥ 3 veces, **sin error intermedio** | sí |
+| Reintento que también falló | error → misma herramienta → error | sí |
+| Reintento que funcionó | error → misma herramienta → éxito | no (informativa) |
+| Herramienta colgada | `tool_use` sin resultado > 10 min, **excepto** si lanza un subagente que sigue escribiendo | sí |
+| Coste por token de salida | columna ordenable | no |
+
+## 8. Pruebas y evaluación (cómo se demuestra que los datos son correctos)
+
+1. **Test de deduplicación por `requestId`** (exhaustivo): fixture con peticiones multilínea;
+   los tokens deben contarse una vez.
+2. **Test oráculo contra `cost-state`**: compara **tokens por modelo** (no dólares) calculados
+   por traza con el `modelUsage` que escribe Claude Code. [verificado] Coincidencia **exacta** en
+   2 de 3 sesiones con `cost-state` en este disco. Es escaso (4 líneas en todo el disco): es una
+   prueba puntual de exactitud, no una suite de regresión. Las llamadas internas (Haiku) se
+   excluyen de la comparación.
+3. **Tests del parser** por tipo de línea, incluidos `<synthetic>`, sin `requestId`, `unknown`.
+4. **Tests del watcher:** línea parcial, truncado, borrado, idempotencia al reprocesar.
+5. **Test de seguridad:** una salida de herramienta con `<script>` no se ejecuta; `Host` ajeno →
+   rechazo.
+6. **Fixtures:** pequeñas y **sanitizadas**. Los JSONL reales contienen datos personales y
+   posibles secretos y **nunca** se commitean.
+
+## 9. Seguridad
+
+- Escucha **solo en `127.0.0.1`**.
+- Valida la cabecera `Host` (contra DNS rebinding); `Origin`, si viene, debe coincidir; si no
+  viene, se acepta. Sin token en v1 (panel de solo lectura).
+- **Todo** el texto de los JSONL se pinta con `textContent`, nunca `innerHTML` (XSS).
+- Solo lectura sobre `~/.claude/`: traza nunca escribe ahí.
+- Estado propio en `~/.traza/` (config + `traza.db`), separado de los datos de Claude Code.
+
+## 10. SSE
+
+- Cada evento lleva `id:` (el `events.id`) y la `cache_generation`; el cliente se conecta a
+  `/events?gen=…`. Si la generación no coincide (la BD se reconstruyó), el cliente recarga en vez
+  de reanudar desde `Last-Event-ID`.
+- Heartbeat `: ping` cada 15 s.
+- Cola por cliente con tamaño máximo; si se llena, se descarta lo más viejo; nunca se bloquea
+  al watcher.
+
+## 11. Riesgos
+
+| Riesgo | Impacto | Mitigación |
+|---|---|---|
+| Claude Code cambia el formato JSONL | panel roto o números falsos | parser tolerante, `unknown` visible, tests, `parser_version` |
+| Discrepancia del oráculo en `3416476c` (`cost-state` habla de `claude-opus-5-5`, el JSONL solo tiene `claude-opus-5` y otras cifras) | el oráculo puede no ser fiable en sesiones reanudadas | [sin verificar] hipótesis: `cost-state` arrastra acumulados de otra sesión (`--resume`/fork). Afecta al test, no al esquema. Investigar en F0 |
+| Precios desactualizados | coste estimado erróneo | `prices.toml` editable, `?` para modelos desconocidos, etiqueta "estimado" |
+| Llamadas internas no visibles en JSONL | coste inferior al real | mostrar "coste interno no desglosado" |
+| Rendimiento de `stat()` en Windows con antivirus | CPU / latencia | medir; subir intervalo si hace falta |
+| Colisión de nombre `traza` en GitHub/PyPI | no publicable con ese nombre | [sin verificar] comprobar en F0 |
+| Datos personales en fixtures o capturas del GIF | fuga de información | fixtures sintéticas; revisar el GIF antes de publicar |
+
+## 12. Roadmap de alcance
+
+**v1 (MVP):** todo lo de §4.1 a §10.
+
+**v1.x (solo si se echa en falta):** hooks HTTP para "necesita input" y estado exacto.
+
+**v2:**
+- Juez LLM **local y gratuito** (p. ej. vía Ollama) que puntúa el resultado de cada subagente
+  frente a su encargo, **calibrado** con un conjunto de casos etiquetados por el autor para medir
+  cuánto acierta. Depende del hardware (GPU/VRAM), a comprobar entonces.
+- Mostrar la salida de los hooks (`attachment`) en la timeline.
+
+**Ideas para más adelante:** gráficas de gasto por día/semana, alertas de presupuesto,
+exportar una sesión como informe, replay animado.
