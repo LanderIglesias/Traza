@@ -61,8 +61,11 @@ argumentos, resultados), que es lo que hace falta para juzgar calidad.
 - Es un formato **interno, no documentado**; una actualización puede romper el parser
   (mitigación: parser tolerante, tipos desconocidos contados y visibles, tests sobre fixtures).
 - El estado "esperando tu permiso" no es visible.
-- El estado "pensando" solo se deduce del `mtime` del fichero: las líneas parecen escribirse
-  al terminar cada respuesta, no en streaming [sin verificar del todo; ver plan F0].
+- El estado "pensando" solo se deduce del `mtime` del fichero: las líneas de una respuesta se
+  escriben **todas de golpe al terminarla**, no en streaming [verificado en vivo, `findings.md`
+  §1]. Su `timestamp` es el de generación de cada bloque, no el de escritura.
+- El campo `apiBlockIndex` solo existe en algunas versiones (sí en la extensión 2.1.267, no en la
+  CLI 2.1.226) [verificado]: el parser no depende de él.
 - Las llamadas internas de Claude Code (p. ej. a Haiku para títulos) **no aparecen** en el JSONL
   [verificado: 15.777 tokens de Haiku en `cost-state`, 0 en el JSONL]. Se muestran como
   "coste interno no desglosado" cuando se puede calcular la diferencia.
@@ -125,7 +128,8 @@ se reconecta solo.
 - **Jerarquía** = el `toolUseId` del `meta.json` del subagente se busca entre los `tool_use` de
   los ficheros de la sesión; el agente que lo contiene es el padre. Funciona a cualquier
   `spawnDepth`. Si no se encuentra → **huérfano**, se muestra como raíz con "padre desconocido".
-- [sin verificar] si `claude --resume` escribe en el mismo fichero o crea otro (plan F0).
+- `claude --resume` sigue escribiendo en el **mismo fichero** [verificado en vivo,
+  `findings.md` §2].
 
 ### 6.2 Tablas
 
@@ -135,7 +139,7 @@ se reconecta solo.
 | `files` | `path` | `session_id`, `agent_id` (`main` para el fichero principal; el id del subagente para `subagents/agent-<id>.jsonl`), `size`, `mtime`, `offset` |
 | `sessions` | `session_id` | proyecto, `cwd`, título (`ai-title`/`custom-title`), inicio, última actividad |
 | `agents` | `(session_id, agent_id)` | `parent_agent_id` (NULL = raíz/huérfano), `parent_tool_use_id`, `agent_type`, `description`, `spawn_depth` |
-| `requests` | `request_id` | `session_id`, `agent_id`, hora, modelo, `input`, `output`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `stop_reason` |
+| `requests` | `request_id` | `session_id`, `agent_id`, hora, modelo, `input`, `output`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `speed`, `inference_geo`, `web_search_requests`, `stop_reason` |
 | `events` | `id INTEGER PRIMARY KEY AUTOINCREMENT` | `(file_path, byte_offset, block)` UNIQUE, `uuid` (solo verificación), `session_id`, `agent_id`, hora, `kind`, `tool_name`, `tool_use_id`, `is_error`, `input_hash`, `request_id`, `file_path`, `byte_offset`, `length` |
 
 Índices: `events(agent_id, id)`, `events(tool_use_id)`, `events(uuid)`, `events(request_id)`,
@@ -238,9 +242,15 @@ disponible"**, un único estado de error.
   → `claude-haiku-4-5`). Nada más se fusiona: `claude-opus-5` y `claude-opus-5-5` son modelos
   distintos.
 - Modelo sin precio → `?`, nunca 0.
+- **Modificadores** [verificado en la página oficial de precios, `findings.md` §5]:
+  `speed = "fast"` usa la tabla de fast mode; `inference_geo = "us"` multiplica todo por 1,1;
+  cada búsqueda web suma 0,01 $. Un valor desconocido en cualquiera de estos campos → `?`.
+- La fórmula está **validada al microdólar**: aplicada a la sesión `36b96010` da 2,012743 $ y
+  0,017852 $, idénticos a los `costUSD` de su `cost-state` [verificado].
 - Se etiqueta siempre **"coste estimado"**, con tooltip: precios públicos actuales aplicados a
   sesiones pasadas; no es la factura.
-- Los precios se verifican contra la referencia oficial al implementar, no de memoria.
+- `prices.toml` lleva la fecha y la URL de la fuente (platform.claude.com, consultada el
+  29-09-2026).
 
 ## 7. Interfaz
 
@@ -295,7 +305,9 @@ Los umbrales viven en un solo bloque de constantes.
 1. **Test de deduplicación por `requestId`** (exhaustivo): fixture con peticiones multilínea;
    los tokens deben contarse una vez.
 2. **Test oráculo contra `cost-state`**: compara **tokens por modelo** (no dólares) calculados
-   por traza con el `modelUsage` que escribe Claude Code. [verificado] Coincidencia **exacta** en
+   por traza con el `modelUsage` que escribe Claude Code, en la ventana **[`startTime` de
+   `cost-state`, posición de la línea]**: `cost-state` mide el gasto del proceso desde que
+   arrancó, no el de toda la sesión (`findings.md` §4). [verificado] Coincidencia **exacta** en
    2 de 3 sesiones con `cost-state` en este disco. Es escaso (4 líneas en todo el disco): es una
    prueba puntual de exactitud, no una suite de regresión. Las llamadas internas (Haiku) se
    excluyen de la comparación. **Política:** el test recorre todas las sesiones con

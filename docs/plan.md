@@ -20,7 +20,7 @@ Reglas del plan:
   proyectos pequeños de otros ámbitos (modelado 3D, transporte, blockchain).
 - Repo git creado con el commit inicial de `docs/`.
 
-## F0 — Verificaciones previas (spike, ~medio día)
+## F0 — Verificaciones previas (spike, ~medio día) — ✅ HECHO, ver [`findings.md`](findings.md)
 
 Resolver los **[sin verificar]** del diseño con pruebas reales. Todo el código de esta fase es
 **desechable** y no entra en el repo.
