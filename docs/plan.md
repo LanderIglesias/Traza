@@ -12,6 +12,14 @@ Reglas del plan:
 
 ---
 
+## Ya hecho (29-09-2026, durante el brainstorming)
+
+- Deduplicación por `requestId` y test oráculo **validados con un script desechable** contra
+  los JSONL reales: tokens exactos en 2 de 3 sesiones con `cost-state`.
+- Nombre `traza` **libre**: `https://pypi.org/pypi/traza/json` → 404; en GitHub solo hay
+  proyectos pequeños de otros ámbitos (modelado 3D, transporte, blockchain).
+- Repo git creado con el commit inicial de `docs/`.
+
 ## F0 — Verificaciones previas (spike, ~medio día)
 
 Resolver los **[sin verificar]** del diseño con pruebas reales. Todo el código de esta fase es
@@ -22,7 +30,6 @@ Resolver los **[sin verificar]** del diseño con pruebas reales. Todo el código
 | ¿Las líneas `assistant` se escriben al terminar la respuesta o en streaming? | comparar marcas de tiempo de las líneas de un mismo `requestId` en una sesión grabada a propósito |
 | ¿`claude --resume` escribe en el mismo fichero o crea otro? | reanudar una sesión de prueba y observar `~/.claude/projects/` |
 | ¿Por qué no cuadra el oráculo en `3416476c`? | inspeccionar dónde aparece su `cost-state` y si hay otro fichero con ese `sessionId` o con `claude-opus-5-5` |
-| ¿Está libre el nombre `traza` en PyPI y GitHub? | búsqueda en pypi.org y github.com |
 | Precios actuales de los modelos presentes en disco | referencia oficial de precios de Anthropic |
 
 **Hecho cuando:** `docs/findings.md` responde cada pregunta con la evidencia (o "no se pudo
@@ -30,7 +37,11 @@ determinar" y su consecuencia), y `design.md` está actualizado si algo cambió.
 
 ## F1 — Parser puro + cálculo de tokens (~1 día)
 
-Crear el repo (`git init`, `.gitignore` que excluya `.claude/`, `.serena/`, `*.db` y cualquier
+**Orden obligatorio:** los dos primeros tests que se escriben son la **deduplicación por
+`requestId`** y el **parser sobre una fixture con la forma real de un JSONL**. Si fallan, todo lo
+demás miente.
+
+Configurar el repo (`.gitignore` que excluya `.claude/`, `.serena/`, `*.db` y cualquier
 JSONL real), `pyproject.toml`, `traza/parser.py`, `traza/pricing.py`, `prices.toml`, tests.
 
 - Fixtures **sintéticas y sanitizadas** que reproducen los casos reales: petición multilínea con
@@ -108,8 +119,7 @@ heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `
 
 ## F7 — Empaquetado y portfolio (~1 día)
 
-- Instalación en un comando: `pipx install traza` (o `uv tool install`), a confirmar según
-  disponibilidad del nombre (F0).
+- Instalación en un comando: `pipx install traza` (o `uv tool install`).
 - README en inglés con: qué es y qué no, GIF de demo (revisado para que no muestre datos
   personales), contrato de caché y ventana rodante de 30 días, "coste estimado", resultado del
   test oráculo, cómo se verificó cada dato.
@@ -125,6 +135,11 @@ datos reales, y todos los gates pasan o sus hallazgos están resueltos o documen
 
 ~7 días de trabajo (F0–F7). Es una estimación, no un compromiso: F1 y F2 son las fases con más
 riesgo de alargarse, porque dependen de un formato no documentado.
+
+**Si hay que recortar, se cortan F6 y F7**, en ese orden inverso: primero el empaquetado
+pulido (F7: se puede usar con `python -m traza serve` sin instalador), después las señales
+automáticas (F6). F1–F5 ya dan el panel que se usa a diario: sesiones, árbol, coste y vista de
+juicio.
 
 ## Después de v1 (no planificado todavía)
 

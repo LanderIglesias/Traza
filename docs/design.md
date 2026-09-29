@@ -288,7 +288,6 @@ Los umbrales viven en un solo bloque de constantes.
 | Precios desactualizados | coste estimado erróneo | `prices.toml` editable, `?` para modelos desconocidos, etiqueta "estimado" |
 | Llamadas internas no visibles en JSONL | coste inferior al real | mostrar "coste interno no desglosado" |
 | Rendimiento de `stat()` en Windows con antivirus | CPU / latencia | medir; subir intervalo si hace falta |
-| Colisión de nombre `traza` en GitHub/PyPI | no publicable con ese nombre | [sin verificar] comprobar en F0 |
 | Datos personales en fixtures o capturas del GIF | fuga de información | fixtures sintéticas; revisar el GIF antes de publicar |
 
 ## 12. Roadmap de alcance
