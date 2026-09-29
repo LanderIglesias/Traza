@@ -29,7 +29,7 @@ Resolver los **[sin verificar]** del diseño con pruebas reales. Todo el código
 |---|---|
 | ¿Las líneas `assistant` se escriben al terminar la respuesta o en streaming? | comparar marcas de tiempo de las líneas de un mismo `requestId` en una sesión grabada a propósito |
 | ¿`claude --resume` escribe en el mismo fichero o crea otro? | reanudar una sesión de prueba y observar `~/.claude/projects/` |
-| ¿Por qué no cuadra el oráculo en `3416476c`? | inspeccionar dónde aparece su `cost-state` y si hay otro fichero con ese `sessionId` o con `claude-opus-5-5` |
+| Sesiones copiadas (`3416476c` copia de `7bc000bb`): ¿qué acción las crea (fork, `--resume`)? ¿Las líneas copiadas conservan sus `timestamp` originales? ¿Qué regla decide la sesión dueña de una petición si la copia se ingiere antes? ¿Qué representa su `cost-state`? | comparar ambos ficheros línea a línea (`requestId`, `timestamp`, `parentUuid`) y reproducirlo con una sesión de prueba |
 | Precios actuales de los modelos presentes en disco | referencia oficial de precios de Anthropic |
 
 **Hecho cuando:** `docs/findings.md` responde cada pregunta con la evidencia (o "no se pudo
@@ -53,9 +53,12 @@ JSONL real), `pyproject.toml`, `traza/parser.py`, `traza/pricing.py`, `prices.to
 **Hecho cuando:**
 - Tests verdes: deduplicación por `requestId`, cada tipo de línea, `NULL` vs 0, `<synthetic>` = 0,
   modelo desconocido = `?`, alias solo de sufijo de fecha.
-- **Test oráculo:** en las sesiones de este disco con `cost-state` que cuadran, los tokens por
-  modelo de `traza.report` coinciden **exactamente** con `modelUsage` (ejecutado en local contra
-  datos reales; no se commitea ningún dato real).
+- Test de peticiones heredadas: dos fixtures que comparten `requestId` → el coste total cuenta
+  cada petición una vez.
+- **Test oráculo** (política de `design.md` §8): recorre todas las sesiones con `cost-state`,
+  informa cuáles cuadran; exige coincidencia **exacta** de tokens por modelo en la lista de
+  sesiones sanas (`36b96010`, `598796c2`); las copias se informan como *known issue*. Corre solo
+  en local contra datos reales; no se commitea ningún dato real.
 
 ## F2 — Caché SQLite + watcher (~1 día)
 
@@ -74,7 +77,9 @@ JSONL real), `pyproject.toml`, `traza/parser.py`, `traza/pricing.py`, `prices.to
 ## F3 — Servidor + lista de sesiones en vivo (~1 día)
 
 **Antes de la UI:** `impeccable init` (PRODUCT.md) + `impeccable shape` para fijar la dirección
-visual. `security-audit` en modo guía al tocar la frontera HTTP.
+visual. `security-audit` en modo guía al tocar la frontera HTTP. (`impeccable` y
+`security-audit` son herramientas del flujo de trabajo del autor, **no dependencias** del
+proyecto.)
 
 `traza/server.py` (FastAPI, solo `127.0.0.1`, validación `Host`/`Origin`, SSE con `id`, `gen` y
 heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `traza serve`.
@@ -119,7 +124,8 @@ heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `
 
 ## F7 — Empaquetado y portfolio (~1 día)
 
-- Instalación en un comando: `pipx install traza` (o `uv tool install`).
+- Instalación en un comando **desde el repo**: `pipx install git+https://github.com/<usuario>/traza`.
+  Publicar en PyPI (`pipx install traza`) solo si el tiempo lo permite.
 - README en inglés con: qué es y qué no, GIF de demo (revisado para que no muestre datos
   personales), contrato de caché y ventana rodante de 30 días, "coste estimado", resultado del
   test oráculo, cómo se verificó cada dato.

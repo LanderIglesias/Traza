@@ -93,7 +93,9 @@ tras usar v1 se echa de menos. Requiere modificar `settings.json` con instalador
 ```
 
 1. **Watcher** — tarea asíncrona dentro de FastAPI (sin hilos). Cada 0,5 s:
-   - `glob` de `*.jsonl` (nuevos ficheros);
+   - dos `glob` para ficheros nuevos: `projects/*/*.jsonl` (sesiones principales) y
+     `projects/*/*/subagents/*.jsonl` (subagentes). No se usa `**` para no recorrer carpetas
+     que no contienen transcripts;
    - `os.stat()` de cada fichero registrado; si `(mtime, size)` no cambió, no lo abre;
    - lee desde el offset guardado **solo líneas completas** (terminadas en `\n`); el resto queda
      en un buffer por fichero;
@@ -130,18 +132,30 @@ se reconecta solo.
 | Tabla | Clave | Campos principales |
 |---|---|---|
 | `meta` | `key` | `cache_generation` (uuid al crear la BD), `parser_version` |
-| `files` | `path` | `session_id`, `agent_id`, `size`, `mtime`, `offset` |
+| `files` | `path` | `session_id`, `agent_id` (`main` para el fichero principal; el id del subagente para `subagents/agent-<id>.jsonl`), `size`, `mtime`, `offset` |
 | `sessions` | `session_id` | proyecto, `cwd`, título (`ai-title`/`custom-title`), inicio, última actividad |
 | `agents` | `(session_id, agent_id)` | `parent_agent_id` (NULL = raíz/huérfano), `parent_tool_use_id`, `agent_type`, `description`, `spawn_depth` |
 | `requests` | `request_id` | `session_id`, `agent_id`, hora, modelo, `input`, `output`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `stop_reason` |
-| `events` | `id INTEGER PRIMARY KEY AUTOINCREMENT` | `uuid` UNIQUE, `session_id`, `agent_id`, hora, `kind`, `tool_name`, `tool_use_id`, `is_error`, `input_hash`, `request_id`, `file_path`, `byte_offset`, `length` |
+| `events` | `id INTEGER PRIMARY KEY AUTOINCREMENT` | `(uuid, block)` UNIQUE, `session_id`, `agent_id`, hora, `kind`, `tool_name`, `tool_use_id`, `is_error`, `input_hash`, `request_id`, `file_path`, `byte_offset`, `length` |
 
 Índices: `events(agent_id, id)`, `events(tool_use_id)`, `agents(session_id)`,
-`agents(parent_agent_id)`.
+`agents(session_id, parent_agent_id)`.
+
+**Claves globales (decisiones con datos):**
+- `events (uuid, block)` UNIQUE **global**: de 68.630 `uuid` en disco, ninguno aparece en dos ficheros
+  [verificado].
+- `requests.request_id` PK **global**, a propósito **no** compuesta con `session_id`: 1.274
+  `requestId` aparecen en dos sesiones [verificado], todos entre `7bc000bb` y `3416476c`. La
+  segunda es una **copia** de la primera (fork o `--resume`): Claude Code copia las peticiones
+  con `uuid` nuevos pero el mismo `requestId`. Con una clave compuesta, el coste total contaría
+  dos veces cada petición heredada. Con clave global se cuenta una vez; `requests.session_id`
+  es la sesión **dueña** (la que la originó) y los eventos de la copia que apuntan a una
+  petición de otra sesión se muestran como **heredados** (visibles, sin sumar coste a la copia).
+  [sin verificar] regla exacta para decidir la dueña si la copia se ingiere antes (F0).
 
 ### 6.3 Reglas de ingesta
 
-- **Idempotencia:** clave `uuid` en `events` (lo llevan todas las líneas `user`, `assistant`,
+- **Idempotencia:** clave `(uuid, block)` en `events` (el `uuid` lo llevan todas las líneas `user`, `assistant`,
   `system` y `attachment` [verificado]) e `INSERT OR IGNORE`. Reprocesar nunca duplica.
 - **Tokens una vez por petición:** Claude Code parte cada respuesta en varias líneas (una por
   bloque) y **repite el `usage` completo en cada una** [verificado: 1.036 de 1.036 peticiones
@@ -158,11 +172,29 @@ se reconecta solo.
   - *conocidos e ignorados (contados):* `attachment` (casi todo salida de hooks),
     `queue-operation`, `last-prompt`, `mode`, `file-history-snapshot`, `file-history-delta`,
     `bridge-session`, `atis-latch`, `frame-link`, `artifact-comment-monitor`,
-    `artifact-autoreact-ledger`, `cost-state` (usado solo por el test oráculo), resto de subtipos
-    de `system`.
+    `artifact-autoreact-ledger`, `cost-state`, resto de subtipos de `system`.
+    `cost-state` **no se guarda en la BD**: el test oráculo lo lee directamente del JSONL.
   - *unknown:* todo lo demás, contado y visible.
   - Proporción ignorada hoy: **63 % de las líneas, 41 % de los bytes**. v1 muestra el trabajo del
     modelo, no toda la maquinaria de Claude Code; el README lo dice así.
+
+**Correspondencia línea JSONL → `events.kind`:**
+
+| Origen en el JSONL | `kind` |
+|---|---|
+| `user` con `message.content` de texto (o bloques `text`) y sin `tool_result` | `prompt` |
+| `user`, bloque `tool_result` | `tool_result` (+ `is_error`, `tool_use_id`) |
+| `assistant`, bloque `text` | `text` |
+| `assistant`, bloque `tool_use` | `tool_use` (+ `tool_name`, `tool_use_id`, `input_hash`) |
+| `assistant`, bloque `thinking` | no crea evento (texto vacío en disco) |
+| `system`, subtipo `api_error` | `api_error` |
+| `system`, subtipo `compact_boundary` | `compact_boundary` |
+| `ai-title` / `custom-title` | no crea evento; actualiza `sessions.title` |
+| tipo o subtipo en la lista de ignorados | no crea evento; suma al contador de ignorados |
+| cualquier otra cosa | `unknown` |
+
+Una línea puede producir varios eventos (una por bloque); la clave de idempotencia es
+`(uuid, índice de bloque)`.
 
 ### 6.4 Contrato de la caché
 
@@ -207,7 +239,7 @@ disponible"**, un único estado de error.
 │                    │   │   ⚠ reintento fallido     │ 14:03 Bash pytest      ✗      │
 │                    │   └ reviewer ✓       $0.00    │ RESULTADO devuelto al padre   │
 └────────────────────┴───────────────────────────────┴───────────────────────────────┘
- salud del parser: 0 unknown · 13 tipos ignorados (53.874 líneas) · coste interno no desglosado
+ salud del parser: N unknown · M tipos ignorados (K líneas) · coste interno no desglosado
 ```
 
 - **Sesiones:** vivas arriba; título, proyecto, estado, coste estimado, última actividad.
@@ -253,7 +285,12 @@ Los umbrales viven en un solo bloque de constantes.
    por traza con el `modelUsage` que escribe Claude Code. [verificado] Coincidencia **exacta** en
    2 de 3 sesiones con `cost-state` en este disco. Es escaso (4 líneas en todo el disco): es una
    prueba puntual de exactitud, no una suite de regresión. Las llamadas internas (Haiku) se
-   excluyen de la comparación.
+   excluyen de la comparación. **Política:** el test recorre todas las sesiones con
+   `cost-state`, informa cuáles cuadran y cuáles no, y exige que cuadren **al menos** las de una
+   lista escrita de sesiones sanas (`36b96010`, `598796c2`). Las copias (sesiones que comparten
+   `requestId` con otra) se informan como *known issue*, no como fallo. Así el test es verde hoy
+   y se pone rojo solo si una sesión sana deja de cuadrar. Este test corre solo en local: depende
+   de datos reales que no están en el repo.
 3. **Tests del parser** por tipo de línea, incluidos `<synthetic>`, sin `requestId`, `unknown`.
 4. **Tests del watcher:** línea parcial, truncado, borrado, idempotencia al reprocesar.
 5. **Test de seguridad:** una salida de herramienta con `<script>` no se ejecuta; `Host` ajeno →
@@ -284,7 +321,7 @@ Los umbrales viven en un solo bloque de constantes.
 | Riesgo | Impacto | Mitigación |
 |---|---|---|
 | Claude Code cambia el formato JSONL | panel roto o números falsos | parser tolerante, `unknown` visible, tests, `parser_version` |
-| Discrepancia del oráculo en `3416476c` (`cost-state` habla de `claude-opus-5-5`, el JSONL solo tiene `claude-opus-5` y otras cifras) | el oráculo puede no ser fiable en sesiones reanudadas | [sin verificar] hipótesis: `cost-state` arrastra acumulados de otra sesión (`--resume`/fork). Afecta al test, no al esquema. Investigar en F0 |
+| Discrepancia del oráculo en `3416476c` (`cost-state` habla de `claude-opus-5-5`, el JSONL solo tiene `claude-opus-5` y otras cifras) | el oráculo no es fiable en sesiones copiadas | [verificado] `3416476c` comparte 1.274 `requestId` con `7bc000bb`: es una copia. [sin verificar] qué representa exactamente su `cost-state`. Se trata como *known issue* (ver §8) |
 | Precios desactualizados | coste estimado erróneo | `prices.toml` editable, `?` para modelos desconocidos, etiqueta "estimado" |
 | Llamadas internas no visibles en JSONL | coste inferior al real | mostrar "coste interno no desglosado" |
 | Rendimiento de `stat()` en Windows con antivirus | CPU / latencia | medir; subir intervalo si hace falta |
