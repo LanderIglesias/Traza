@@ -145,5 +145,19 @@ def agent_parents(conn, session_id: str) -> dict[str, str | None]:
         FROM agents a WHERE a.session_id = ?""", (session_id,)))
 
 
+def orphans(conn, session_id: str) -> dict[str, str]:
+    """{agent_id: motivo} de los subagentes sin padre. Dos clases distintas (§6.1):
+    - "sin_tool_use_id": su meta.json no dice quién lo lanzó; nunca tendrá padre (en disco:
+      subagentes de skills en modo fork, p. ej. /code-review).
+    - "padre_no_encontrado": dice quién lo lanzó pero ese tool_use no está (aún) en la sesión."""
+    return {a: ("sin_tool_use_id" if tid is None else "padre_no_encontrado")
+            for a, tid, parent in conn.execute("""
+                SELECT a.agent_id, a.parent_tool_use_id,
+                       (SELECT 1 FROM events e WHERE e.session_id = a.session_id
+                          AND e.kind = 'tool_use' AND e.tool_use_id = a.parent_tool_use_id)
+                FROM agents a WHERE a.session_id = ? AND a.agent_id <> 'main'""", (session_id,))
+            if parent is None}
+
+
 def ignored_counts(conn) -> dict[str, int]:
     return dict(conn.execute("SELECT type, SUM(n) FROM ignored GROUP BY type"))

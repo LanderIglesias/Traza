@@ -112,9 +112,12 @@ tras usar v1 se echa de menos. Requiere modificar `settings.json` con instalador
      tick entero y se repetiría para siempre);
    - `FileNotFoundError` → borrado en cascada de sus datos + evento SSE de borrado;
    - la carga inicial va a `asyncio.to_thread` con **su propia conexión** SQLite [medido en F2:
-     todo el disco, 145 ficheros y 89k líneas, en 1,7–2 s; el mayor, 71 MB, en 0,56 s].
-   - Un subagente cuyo `meta.json` no trae `toolUseId` (6 de 88 en disco, lanzados por skills en
-     modo fork u otros mecanismos) queda como raíz con "padre desconocido".
+     todo el disco, 146 ficheros y 89k líneas, **1,71–1,74 s** en tres construcciones seguidas
+     (una medida aislada de 4,1 s no se repitió); el 60 % es decodificar JSON; el mayor fichero,
+     71 MB, 0,56 s]. Solo pasa al crear la caché: después cada tick lee solo lo nuevo (0,01 s).
+   - Una línea que nunca se completa (proceso muerto a mitad de escritura) cuesta un `stat` por
+     tick, no una lectura: el tamaño guardado incluye los bytes incompletos, así que
+     `(size, mtime)` no cambia y el fichero ni se abre [test].
    - Coste a vigilar: N `stat()` cada 0,5 s (antivirus en Windows). Se mide si la carpeta crece.
 2. **Parser** — funciones puras, sin I/O ni dependencias: línea JSON → registros para `requests`,
    `events`, `agents`, `sessions`. Es la pieza con más tests.
@@ -136,7 +139,19 @@ se reconecta solo.
 - **Agente** = el hilo principal de la sesión (`agent_id = "main"`) o un subagente.
 - **Jerarquía** = el `toolUseId` del `meta.json` del subagente se busca entre los `tool_use` de
   los ficheros de la sesión; el agente que lo contiene es el padre. Funciona a cualquier
-  `spawnDepth`. Si no se encuentra → **huérfano**, se muestra como raíz con "padre desconocido".
+  `spawnDepth`. Si no se encuentra → **huérfano**, se muestra como raíz, con uno de dos motivos
+  (`db.orphans`, calculado al consultar como el padre):
+  - `sin_tool_use_id`: su `meta.json` no dice quién lo lanzó; **nunca** tendrá padre. En disco,
+    7 de 89 subagentes, **todos** forks de la skill `/code-review` [verificado]. UI: "lanzado
+    fuera de la herramienta Agent".
+  - `padre_no_encontrado`: dice quién lo lanzó, pero ese `tool_use` no está en la sesión (0 en
+    disco). UI: "padre desconocido".
+- **Huérfano temporal en vivo — decisión: no se añade espera en la UI.** El `tool_use` que lanza
+  un subagente se escribe al terminar la respuesta del padre, es decir **antes** de que la
+  herramienta se ejecute y exista el fichero del subagente (`findings.md` §1), y en un mismo
+  tick el fichero principal se procesa antes que sus subagentes (orden de ruta). Así que el
+  "salto" de raíz a hijo no debería verse. [sin verificar en vivo] → se comprueba en F4; si
+  aparece, la UI retrasa un tick los huérfanos `padre_no_encontrado` recientes.
 - `claude --resume` sigue escribiendo en el **mismo fichero** [verificado en vivo,
   `findings.md` §2].
 
@@ -145,7 +160,7 @@ se reconecta solo.
 | Tabla | Clave | Campos principales |
 |---|---|---|
 | `meta` | `key` | `cache_generation` (uuid al crear la BD), `parser_version` |
-| `files` | `path` | `session_id`, `agent_id` (`main` para el fichero principal; el id del subagente para `subagents/agent-<id>.jsonl`), `size`, `mtime`, `offset` |
+| `files` | `path` | `session_id`, `agent_id` (`main` para el fichero principal; el id del subagente para `subagents/agent-<id>.jsonl`), `size`, `mtime_ns`, `offset`, `first_ts` (inicio de sesión), `head` (huella de la primera línea) |
 | `sessions` | `session_id` | proyecto, `cwd`, título (`ai-title`/`custom-title`), inicio, última actividad |
 | `agents` | `(session_id, agent_id)` | `parent_tool_use_id`, `agent_type`, `description`, `spawn_depth`. El **padre se deriva** al consultar (§6.1): no depende del orden de ingesta |
 | `requests` | `request_id` | hora, modelo, `input`, `output`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `speed`, `inference_geo`, `web_search_requests`, `stop_reason` |
@@ -176,11 +191,19 @@ no se guarda (ver "Sesión dueña").
   línea del fichero principal, sea del tipo que sea**, también ignorada: la copia empieza con el
   mismo prompt y el mismo `timestamp` que la original, solo la primera línea las distingue
   [verificado en F2, `findings.md` §F2]; `7bc000bb` 14:42 frente a `3416476c` 14:47). Se calcula con la vista
-  `request_owner` sobre `request_refs` + `sessions.started_at` (desempate por `session_id`),
-  así que **no depende del orden de ingesta** y no hay nada que actualizar. En la copia, esos
+  `request_owner` sobre `request_refs` + `files.first_ts` del fichero principal, así que **no
+  depende del orden de ingesta** y no hay nada que actualizar. Reglas completas, cada una con
+  test:
+  1. gana el `first_ts` más antiguo (texto ISO-8601, orden lexicográfico);
+  2. `first_ts` = hora de la **primera línea que la tenga**; si la primera es `unknown` o no trae
+     hora, se usa la siguiente;
+  3. una sesión sin **ninguna** hora (o sin fichero principal) va **la última**;
+  4. empate exacto (copia manual, backup restaurado) → gana el `session_id` menor en orden
+     lexicográfico, y después el `agent_id`. Nunca depende del orden del `glob`. En la copia, esos
   eventos se muestran como **heredados** (visibles, sin sumar coste).
 - **Borrado y copias:** al desaparecer un fichero se borran sus eventos y sus `request_refs`; las
-  peticiones que ya no tienen ninguna referencia se borran. La **reasignación es automática**:
+  peticiones que ya no tienen ninguna referencia se borran **en el mismo tick** (también al
+  truncar), así que no se acumulan peticiones huérfanas [test]. La **reasignación es automática**:
   la vista elige la siguiente sesión viva más antigua. Así, cuando Claude Code borre la
   original a los 30 días, la copia recupera el coste de lo heredado en vez de quedarse a 0.
 - **Coste heredado sin reparsear:** no hace falta un campo `inherited_from_session_id` en

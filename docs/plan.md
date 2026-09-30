@@ -98,6 +98,10 @@ heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `
   con los estados de §7.1 cambiando mientras trabajan.
 - Coste propio y acumulado por nodo coinciden con `traza.report` para esa sesión.
 - Colapsar un nodo y recibir eventos SSE no lo vuelve a abrir.
+- El subagente **no** aparece un instante como huérfano antes de colocarse bajo su padre
+  (design.md §6.1, decisión "huérfano temporal"). Si aparece, la UI retrasa un tick los
+  `padre_no_encontrado` recientes.
+- Huérfanos con marca distinta según `db.orphans` (`sin_tool_use_id` / `padre_no_encontrado`).
 - Columna "coste por token de salida" ordenable.
 
 ## F5 — Vista de juicio y contenido bajo demanda (~1 día)

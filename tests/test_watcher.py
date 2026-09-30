@@ -196,3 +196,76 @@ def test_fichero_sustituido_por_otro_mas_largo_se_reprocesa(root, conn):
     uuids = [r[0] for r in conn.execute(
         "SELECT uuid FROM events WHERE file_path LIKE '%sess-B.jsonl' ORDER BY byte_offset")]
     assert uuids == [f"n{i}" for i in range(5)]
+
+
+def _two_sessions(tmp_path, first_a, first_b):
+    """Dos ficheros que comparten req_X; cada uno empieza con la línea que se le pase."""
+    proj = tmp_path / "projects" / "p"
+    proj.mkdir(parents=True)
+    ans = {"type": "assistant", "uuid": "a", "requestId": "req_X", "timestamp": "t",
+           "message": {"model": "m", "content": [], "usage": {}}}
+    for name, first in (("sess-b", first_b), ("sess-a", first_a)):
+        (proj / f"{name}.jsonl").write_text(
+            "".join(json.dumps(d) + "\n" for d in (first, ans)), encoding="utf-8", newline="\n")
+    return tmp_path / "projects"
+
+
+def test_empate_exacto_desempata_por_session_id(tmp_path, conn):
+    # cp manual, backup restaurado: misma primera línea. Gana el session_id menor, siempre,
+    # sin depender del orden en que el glob devuelva los ficheros.
+    same = {"type": "queue-operation", "timestamp": "2026-01-01T10:00:00.000Z"}
+    scan(conn, _two_sessions(tmp_path, same, same))
+    assert db.owners(conn) == {"req_X": "sess-a"}
+
+
+def test_primera_linea_sin_timestamp_usa_la_primera_que_lo_tenga(tmp_path, conn):
+    # sess-b empieza con una línea unknown (sin hora); su inicio es la siguiente con hora.
+    root = _two_sessions(tmp_path, {"type": "mode", "timestamp": "2026-01-01T11:00:00.000Z"},
+                         {"type": "algo-nuevo"})
+    scan(conn, root)
+    # sess-b: primera hora = "t" del assistant ("t" > "2026-..." en orden de texto → más tarde)
+    assert db.owners(conn) == {"req_X": "sess-a"}
+    starts = dict(conn.execute("SELECT session_id, first_ts FROM files"))
+    assert starts == {"sess-a": "2026-01-01T11:00:00.000Z", "sess-b": "t"}
+
+
+def test_sesion_sin_ninguna_hora_va_la_ultima(tmp_path, conn):
+    proj = tmp_path / "projects" / "p"
+    proj.mkdir(parents=True)
+    ans = {"type": "assistant", "uuid": "a", "requestId": "req_X",
+           "message": {"model": "m", "content": [], "usage": {}}}
+    (proj / "aaa.jsonl").write_text(json.dumps(ans) + "\n", encoding="utf-8", newline="\n")
+    (proj / "zzz.jsonl").write_text(
+        json.dumps({"type": "mode", "timestamp": "2026-01-01T00:00:00.000Z"}) + "\n"
+        + json.dumps(ans) + "\n", encoding="utf-8", newline="\n")
+    scan(conn, tmp_path / "projects")
+    assert db.owners(conn) == {"req_X": "zzz"}  # "aaa" no sabe cuándo empezó: no gana
+
+
+def test_borrar_la_ultima_referencia_borra_la_peticion(root, conn):
+    scan(conn, root)
+    (root / "proj" / "sess-B.jsonl").unlink()
+    scan(conn, root)
+    ids = {r[0] for r in conn.execute("SELECT request_id FROM requests")}
+    assert "req_9" not in ids and "req_1" in ids  # req_1 sigue viva en sess-A
+
+
+def test_linea_a_medias_para_siempre_no_se_relee(tmp_path, conn):
+    # Proceso muerto a mitad de escritura: la línea nunca se completa. Coste = un stat, no una
+    # lectura por tick.
+    proj = tmp_path / "projects" / "p"
+    proj.mkdir(parents=True)
+    (proj / "s.jsonl").write_text('{"type": "user", "mess', encoding="utf-8")
+    assert scan(conn, tmp_path / "projects")["files_read"] == 1
+    assert scan(conn, tmp_path / "projects")["files_read"] == 0
+
+
+def test_dos_clases_de_huerfano(root, conn):
+    subs = root / "proj" / "sess-A" / "subagents"
+    (subs / "agent-fork.jsonl").write_text("", encoding="utf-8")
+    (subs / "agent-fork.meta.json").write_text(json.dumps({"agentType": "general-purpose"}))
+    (subs / "agent-lost.jsonl").write_text("", encoding="utf-8")
+    (subs / "agent-lost.meta.json").write_text(json.dumps({"toolUseId": "toolu_nope"}))
+    scan(conn, root)
+    assert db.orphans(conn, "sess-A") == {"fork": "sin_tool_use_id",
+                                          "lost": "padre_no_encontrado"}

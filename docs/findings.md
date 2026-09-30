@@ -131,8 +131,11 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
   peticiones de `7bc000bb`, la cifra de F0.
 - **Subagentes huérfanos:** 6 de 88. Son los únicos `meta.json` **sin `toolUseId`** (ni
   `description`); uno es el `/code-review` de esta sesión, lanzado por una skill en modo fork.
-  Los 82 con `toolUseId` encuentran a su padre. Enlazar los 6 (p. ej. por hora con el
-  `tool_use` de la skill) queda **sin investigar**.
+  Los 82 con `toolUseId` encuentran a su padre. **Patrón confirmado** (revisión de F2): ahora
+  son 7 y los 7 son forks de la skill `/code-review` (su encargo empieza por "Review target:" o
+  "medium effort → … angles"), de 4 sesiones distintas. No es un fallo al leer `meta.json`:
+  Claude Code no escribe `toolUseId` cuando una skill lanza un subagente en modo fork. Enlazarlos
+  (p. ej. por hora con el `tool_use` de la skill) queda **sin investigar**.
 - **Sin verificar con datos reales:** subagentes anidados (0 en disco con padre distinto de
   `main`; la regla solo está probada con fixtures) y el truncado/borrado de un fichero vivo (solo
   en tests sobre copias).
@@ -144,3 +147,6 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
   mismos números (8.113 peticiones = parser puro, copia hereda 1.274); la construcción completa
   midió 4,1 s en esa pasada (1,7–2 s en las anteriores; sin aislar si es ruido o la lectura extra
   de la primera línea).
+- **Tiempo de construcción:** tres construcciones completas seguidas, 1,71 / 1,72 / 1,74 s. La
+  medida de 4,1 s no se repite. Perfil: 0,73 s decodificando JSON, 0,27 s en `executemany`, el
+  `glob` no aparece. No hay coste escondido.
