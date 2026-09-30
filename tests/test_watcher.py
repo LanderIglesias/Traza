@@ -333,3 +333,10 @@ def test_cambio_de_version_con_la_bd_abierta_da_un_error_claro(tmp_path, monkeyp
         monkeypatch.setattr(db, "PARSER_VERSION", "otra")
         with pytest.raises(RuntimeError, match="en uso"):
             db.connect(path)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="solo Windows ignora mayúsculas en rutas")
+def test_raiz_con_otras_mayusculas_es_la_misma(root, conn):
+    scan(conn, root)
+    stats = scan(conn, Path(str(root).upper()))
+    assert (stats["deleted"], stats["files_read"]) == (0, 0)

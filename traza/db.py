@@ -67,7 +67,7 @@ SELECT request_id, session_id AS owner_session_id, agent_id AS owner_agent_id FR
 """
 
 
-def connect(path) -> sqlite3.Connection:
+def connect(path, check_same_thread: bool = True) -> sqlite3.Connection:
     """Abre la caché; si no existe o es de otra versión, la crea de cero."""
     path = Path(path)
     if path.exists():
@@ -85,7 +85,7 @@ def connect(path) -> sqlite3.Connection:
     fresh = not path.exists()
     path.parent.mkdir(parents=True, exist_ok=True)
     # timeout: otro escritor (servidor + `traza.scan`) espera hasta 30 s en vez de fallar a los 5
-    conn = sqlite3.connect(path, timeout=30)
+    conn = sqlite3.connect(path, timeout=30, check_same_thread=check_same_thread)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     if fresh:  # todo o nada: un Ctrl+C a medias deja una BD vacía, que se puede reconstruir

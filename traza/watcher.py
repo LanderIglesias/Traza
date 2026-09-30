@@ -2,11 +2,14 @@
 
 Solo lee ~/.claude; escribe únicamente en la caché. Todo un tick es una transacción.
 """
+import asyncio
 import hashlib
 import os
+import sqlite3
 from collections import Counter
 from pathlib import Path
 
+from . import db
 from .parser import parse_line, parse_meta
 
 
@@ -180,3 +183,21 @@ def _forget(conn, path: str) -> None:
     conn.execute("DELETE FROM agents WHERE session_id = ? AND agent_id = ?", (session_id, agent_id))
     conn.execute("DELETE FROM sessions WHERE session_id = ? AND NOT EXISTS "
                  "(SELECT 1 FROM files WHERE session_id = ?)", (session_id, session_id))
+
+
+async def watch(db_path, root, interval: float = 0.5, on_tick=None) -> None:
+    """Bucle del watcher para el servidor (design.md §5). Invariante: **el event loop nunca se
+    bloquea**. Cada tick corre en un hilo (`asyncio.to_thread`) con una conexión propia; si otro
+    proceso tiene el cerrojo de escritura, quien espera es ese hilo, no el servidor."""
+    conn = await asyncio.to_thread(db.connect, db_path, check_same_thread=False)
+    try:
+        while True:
+            try:
+                stats = await asyncio.to_thread(scan, conn, root)
+            except sqlite3.OperationalError:  # cerrojo ocupado > 30 s: se reintenta luego
+                stats = None
+            if stats and on_tick:
+                await on_tick(stats)
+            await asyncio.sleep(interval)
+    finally:
+        conn.close()
