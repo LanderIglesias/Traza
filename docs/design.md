@@ -140,7 +140,7 @@ se reconecta solo.
 | `sessions` | `session_id` | proyecto, `cwd`, título (`ai-title`/`custom-title`), inicio, última actividad |
 | `agents` | `(session_id, agent_id)` | `parent_agent_id` (NULL = raíz/huérfano), `parent_tool_use_id`, `agent_type`, `description`, `spawn_depth` |
 | `requests` | `request_id` | `owner_session_id`, `owner_agent_id`, hora, modelo, `input`, `output`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `speed`, `inference_geo`, `web_search_requests`, `stop_reason` |
-| `events` | `id INTEGER PRIMARY KEY AUTOINCREMENT` | `(file_path, byte_offset, block)` UNIQUE, `uuid` (solo verificación), `session_id`, `agent_id`, hora, `kind`, `tool_name`, `tool_use_id`, `is_error`, `input_hash`, `request_id`, `file_path`, `byte_offset`, `length` |
+| `events` | `id INTEGER PRIMARY KEY AUTOINCREMENT` | `(file_path, byte_offset, block)` UNIQUE, `uuid` (solo verificación), `session_id`, `agent_id`, hora, `kind`, `tool_name`, `tool_use_id`, `is_error`, `input_hash`, `origin`, `request_id`, `file_path`, `byte_offset`, `length` |
 
 Índices: `events(agent_id, id)`, `events(tool_use_id)`, `events(uuid)`, `events(request_id)`,
 `agents(session_id)`,
@@ -211,7 +211,7 @@ se reconecta solo.
 
 | Origen en el JSONL | `kind` |
 |---|---|
-| `user` con `message.content` de texto (o bloques `text`) y sin `tool_result` | `prompt` |
+| `user` sin ningún bloque `tool_result` (texto, o texto + imagen/documento) | `prompt`, **un evento por línea** (`block = 0`) + `origin` |
 | `user`, bloque `tool_result` | `tool_result` (+ `is_error`, `tool_use_id`) |
 | `assistant`, bloque `text` | `text` |
 | `assistant`, bloque `tool_use` | `tool_use` (+ `tool_name`, `tool_use_id`, `input_hash`) |
@@ -227,6 +227,15 @@ el array `message.content`** (0, 1, 2…), no un contador por tipo: dos bloques 
 tienen `block` distinto. Un mensaje `user` con varios `tool_result` (herramientas pedidas en
 paralelo) produce **un evento por cada `tool_result`**, cada uno con su `block` y su
 `tool_use_id`. Si `message.content` es un string (prompt de texto plano), `block = 0`.
+En disco, los `tool_result` en paralelo llegan hoy en líneas separadas y solo 5 líneas
+`assistant` tienen más de un bloque [verificado]; el parser admite ambos casos igualmente.
+Un bloque de `assistant` de tipo no conocido → evento `unknown` en su `block`.
+
+**`origin` de un `prompt`** [verificado en F1]: no todo `prompt` lo escribió el usuario. De 771
+líneas, ~385 son `origin.kind = "human"`, 94 `task-notification`, 135 `isMeta` (texto que
+inyecta Claude Code: skills, avisos de comandos) y las de subagentes (sin `origin`) son **su
+encargo**. Se guarda `origin` = `"meta"` si `isMeta`, si no `origin.kind` (o NULL), para que la
+UI distinga sin reparsear.
 
 ### 6.4 Contrato de la caché
 
@@ -257,6 +266,11 @@ disponible"**, un único estado de error.
   → `claude-haiku-4-5`). Nada más se fusiona: `claude-opus-5` y `claude-opus-5-5` son modelos
   distintos.
 - Modelo sin precio → `?`, nunca 0.
+- **Supuestos** (no verificados, marcados en el código): `speed` ausente (1.712 líneas de
+  versiones antiguas) = precio estándar; `inference_geo` ausente (solo las 18 `<synthetic>`) = ×1;
+  el ×1,1 de `inference_geo = "us"` no se aplica a las búsquedas web (0 búsquedas en disco).
+- Los precios de caché de **fast mode** se derivan aplicando los multiplicadores de caché de
+  cada modelo a la tarifa fast oficial; están escritos explícitamente en `prices.toml`.
 - **Modificadores** [verificado en la página oficial de precios, `findings.md` §5]:
   `speed = "fast"` usa la tabla de fast mode; `inference_geo = "us"` multiplica todo por 1,1;
   cada búsqueda web suma 0,01 $. Un valor desconocido en cualquiera de estos campos → `?`.
@@ -332,7 +346,9 @@ Los umbrales viven en un solo bloque de constantes.
    arrancó, no el de toda la sesión (`findings.md` §4). [verificado] Coincidencia **exacta** en
    2 de 3 sesiones con `cost-state` en este disco. Es escaso (4 líneas en todo el disco): es una
    prueba puntual de exactitud, no una suite de regresión. Las llamadas internas (Haiku) se
-   excluyen de la comparación. **Política:** el test recorre todas las sesiones con
+   excluyen de la comparación. El test compara también **dólares** (tolerancia 1 µ$) y solo lee el
+fichero principal: las dos sesiones sanas no tienen carpeta `subagents/` [verificado]. [sin
+verificar] si `cost-state` incluye el gasto de los subagentes; no hay aún un caso que lo pruebe. **Política:** el test recorre todas las sesiones con
    `cost-state`, informa cuáles cuadran y cuáles no, y exige que cuadren **al menos** las de una
    lista escrita de sesiones sanas (`36b96010`, `598796c2`) **que sigan en disco**. Las que ya no
 existan (limpieza de 30 días) se informan como "ausente" y no ponen el test en rojo; si no

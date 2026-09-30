@@ -1,0 +1,56 @@
+# Precios públicos de la API de Anthropic, en USD por millón de tokens.
+# Fuente: https://platform.claude.com/docs/en/about-claude/pricing (consultada el 2026-09-29).
+# Clave = modelo sin sufijo de fecha. Un modelo que no esté aquí sale como coste "?".
+# Validado al microdólar contra el cost-state de una sesión real (docs/findings.md §4).
+
+web_search_per_request = 0.01          # 10 $ por 1.000 búsquedas
+
+[inference_geo]                        # multiplicador sobre los tokens; otro valor → "?"
+not_available = 1.0
+us = 1.1
+
+[models."claude-opus-5-5"]
+input = 4
+output = 20
+cache_read = 0.20
+cache_write_5m = 5
+cache_write_1h = 8
+
+# Fast mode: tarifa oficial 8/40 con los multiplicadores de caché de Opus 5.5 aplicados
+# (lectura 0,05×, escritura 5 min 1,25×, 1 h 2×).
+[models."claude-opus-5-5".fast]
+input = 8
+output = 40
+cache_read = 0.40
+cache_write_5m = 10
+cache_write_1h = 16
+
+[models."claude-opus-5"]
+input = 5
+output = 25
+cache_read = 0.50
+cache_write_5m = 6.25
+cache_write_1h = 10
+
+# Fast mode: tarifa oficial 10/50 con los multiplicadores de caché de Opus 5
+# (lectura 0,1×, escritura 5 min 1,25×, 1 h 2×).
+[models."claude-opus-5".fast]
+input = 10
+output = 50
+cache_read = 1.0
+cache_write_5m = 12.5
+cache_write_1h = 20
+
+[models."claude-sonnet-5"]
+input = 2
+output = 10
+cache_read = 0.20
+cache_write_5m = 2.50
+cache_write_1h = 4
+
+[models."claude-haiku-4-5"]
+input = 1
+output = 5
+cache_read = 0.10
+cache_write_5m = 1.25
+cache_write_1h = 2

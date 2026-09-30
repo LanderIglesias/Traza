@@ -1,0 +1,17 @@
+# Herramientas del autor (nunca al repo)
+.claude/
+.serena/
+
+# Python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Caché de traza y datos reales: nunca se commitean
+*.db
+*.db-wal
+*.db-shm
+*.jsonl
+!tests/fixtures/**/*.jsonl

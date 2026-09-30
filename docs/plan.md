@@ -35,7 +35,7 @@ Resolver los **[sin verificar]** del diseño con pruebas reales. Todo el código
 **Hecho cuando:** `docs/findings.md` responde cada pregunta con la evidencia (o "no se pudo
 determinar" y su consecuencia), y `design.md` está actualizado si algo cambió.
 
-## F1 — Parser puro + cálculo de tokens (~1 día)
+## F1 — Parser puro + cálculo de tokens (~1 día) — ✅ tests verdes, pendiente de revisión
 
 **Orden obligatorio:** los dos primeros tests que se escriben son la **deduplicación por
 `requestId`** y el **parser sobre una fixture con la forma real de un JSONL**. Si fallan, todo lo
