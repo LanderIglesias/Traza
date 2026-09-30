@@ -122,7 +122,12 @@ tras usar v1 se echa de menos. Requiere modificar `settings.json` con instalador
 2. **Parser** — funciones puras, sin I/O ni dependencias: línea JSON → registros para `requests`,
    `events`, `agents`, `sessions`. Es la pieza con más tests.
 3. **SQLite** — caché desechable (ver §6.4), modo WAL, escrituras de un tick en **una transacción**
-   (`executemany`).
+   (`executemany`) que empieza con `BEGIN IMMEDIATE` **antes** de leer los offsets: si corren dos
+   escáneres a la vez (servidor + `python -m traza.scan`), el segundo espera (hasta 30 s) y ve lo
+   que escribió el primero, en vez de trabajar con offsets viejos. Los lectores no esperan (WAL).
+   La raíz se normaliza a ruta absoluta, así que las rutas guardadas no dependen de cómo se llame.
+   Un `meta.json` que aún no existe o está a medio escribir se **reintenta cada tick**
+   (`agents.meta_read = 0`) aunque el `.jsonl` ya no cambie.
 4. **FastAPI** — sirve la página, la API JSON y un endpoint SSE.
 5. **Frontend** — HTML + CSS + JavaScript con `<script type="module">` nativo, sin framework ni
    build. Justificación: árbol + timeline + contadores no necesitan React; así la instalación es
@@ -141,8 +146,9 @@ se reconecta solo.
   los ficheros de la sesión; el agente que lo contiene es el padre. Funciona a cualquier
   `spawnDepth`. Si no se encuentra → **huérfano**, se muestra como raíz, con uno de dos motivos
   (`db.orphans`, calculado al consultar como el padre):
-  - `sin_tool_use_id`: su `meta.json` no dice quién lo lanzó; **nunca** tendrá padre. En disco,
-    7 de 89 subagentes, **todos** forks de la skill `/code-review` [verificado]. UI: "lanzado
+  - `sin_tool_use_id`: su `meta.json` **leído completo** no dice quién lo lanzó; **nunca** tendrá
+    padre. En disco, 8 de 90 subagentes, **todos** forks de la skill `/code-review` [verificado].
+    Un `meta.json` que aún no se ha podido leer cuenta como `padre_no_encontrado` (puede llegar). UI: "lanzado
     fuera de la herramienta Agent".
   - `padre_no_encontrado`: dice quién lo lanzó, pero ese `tool_use` no está en la sesión (0 en
     disco). UI: "padre desconocido".
@@ -284,8 +290,12 @@ NULL en el hilo principal **no** significa "del usuario" ni "encargo".
 
 **La caché es desechable; la fuente de verdad son los JSONL.**
 - Se puede borrar `~/.traza/traza.db` en cualquier momento y se reconstruye.
-- traza solo borra un fichero de BD si es **suya** (tabla `meta` con `cache_generation`); una ruta
-  `--db` que apunte a otra cosa da error y no se toca.
+- traza solo borra un fichero de BD si es **suya** (tabla `meta` con `cache_generation`) o una BD
+  SQLite **vacía** (creación interrumpida); una ruta `--db` que apunte a otra cosa da error y no se
+  toca. La creación del esquema es una sola transacción: un Ctrl+C a medias deja una BD vacía.
+- Si la versión cambia mientras otro proceso de traza tiene la BD abierta: en Windows, error claro
+  ("en uso por otro proceso"); en POSIX el proceso viejo sigue escribiendo en un fichero ya
+  borrado, sin efecto sobre la BD nueva.
 - No hay migraciones de esquema: si cambia el esquema o `parser_version`, se borra y reconstruye.
 - Espejo de lo que hay en disco: si Claude Code borra un JSONL, traza borra sus datos.
 - [verificado en docs, *Data usage*] Claude Code guarda los transcripts **30 días** por defecto

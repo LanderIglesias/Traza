@@ -150,3 +150,13 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
 - **Tiempo de construcción:** tres construcciones completas seguidas, 1,71 / 1,72 / 1,74 s. La
   medida de 4,1 s no se repite. Perfil: 0,73 s decodificando JSON, 0,27 s en `executemany`, el
   `glob` no aparece. No hay coste escondido.
+- **Segunda revisión de código de F2** (`/code-review` sobre `d5d87c4`): 7 fallos, corregidos con
+  test que se vio fallar antes: dos escáneres a la vez leían offsets sin cerrojo; otro escritor
+  fallaba a los 5 s; raíz relativa = todo "borrado" y releído; `meta.json` tardío o a medias
+  marcaba al subagente como huérfano "para siempre"; un Ctrl+C en la primera creación dejaba una
+  BD que `connect` rechazaba; truncar el principal conservaba el título viejo; cambio de versión
+  con la BD abierta reventaba en Windows. Tras los arreglos, el disco real: 8.115 peticiones =
+  parser puro, copia hereda 1.274, 8 huérfanos todos `sin_tool_use_id`, 0 `meta.json` sin leer.
+- **Tests que pasaron en verde a la primera** (describían comportamiento ya existente): a los 5 se
+  les rompió el código a propósito (mutación) y los 5 fallaron. Rutina desde ahora: un test nuevo
+  no se da por bueno sin haberlo visto fallar.

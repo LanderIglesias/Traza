@@ -200,13 +200,14 @@ def tokens_by_model(requests) -> dict[str, Tokens]:
     return {m: Tokens(*v) for m, v in acc.items()}
 
 
-def parse_meta(text: str) -> AgentMeta:
-    """agent-<id>.meta.json de un subagente. Si está roto, todo None (el agente sale huérfano)."""
+def parse_meta(text: str) -> AgentMeta | None:
+    """agent-<id>.meta.json de un subagente. None si está roto o a medio escribir: el watcher
+    lo reintenta en vez de concluir que no dice quién lo lanzó."""
     try:
         m = json.loads(text)
     except ValueError:
-        m = None
+        return None
     if not isinstance(m, dict):
-        m = {}
+        return None
     return AgentMeta(_str(m.get("agentType")), _str(m.get("description")),
                      _str(m.get("toolUseId")), _int(m.get("spawnDepth")))

@@ -55,8 +55,8 @@ def test_meta_json_de_subagente():
 
 
 def test_meta_json_roto_no_rompe():
-    m = parse_meta("{no es json")
-    assert (m.agent_type, m.parent_tool_use_id) == (None, None)
+    assert parse_meta("{no es json") is None   # a medio escribir: se reintenta
+    assert parse_meta("[1, 2]") is None
 
 
 def test_bloque_que_no_es_objeto_no_rompe_el_parser():

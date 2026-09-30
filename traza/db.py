@@ -7,7 +7,7 @@ from .parser import Request, Tokens
 
 # Subir cualquiera de los dos borra y reconstruye la BD: no hay migraciones (§6.4).
 PARSER_VERSION = "3"
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
@@ -22,6 +22,7 @@ CREATE TABLE sessions (session_id TEXT PRIMARY KEY, project TEXT, title TEXT);
 CREATE TABLE agents (
     session_id TEXT NOT NULL, agent_id TEXT NOT NULL,
     parent_tool_use_id TEXT, agent_type TEXT, description TEXT, spawn_depth INTEGER,
+    meta_read INTEGER NOT NULL DEFAULT 0,  -- 1 cuando su meta.json se leyó completo
     PRIMARY KEY (session_id, agent_id)
 );
 CREATE TABLE requests (
@@ -75,27 +76,35 @@ def connect(path) -> sqlite3.Connection:
             raise RuntimeError(f"{path} existe y no es una caché de traza; elige otra ruta")
         if (meta.get("parser_version"), meta.get("schema_version")) != (
                 PARSER_VERSION, SCHEMA_VERSION):
-            for p in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
-                p.unlink(missing_ok=True)
+            try:
+                for p in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
+                    p.unlink(missing_ok=True)
+            except PermissionError:  # Windows: otro proceso (otro traza) la tiene abierta
+                raise RuntimeError(f"{path} está en uso por otro proceso de traza con otra "
+                                   "versión; ciérralo y vuelve a intentarlo") from None
     fresh = not path.exists()
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    # timeout: otro escritor (servidor + `traza.scan`) espera hasta 30 s en vez de fallar a los 5
+    conn = sqlite3.connect(path, timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
-    if fresh:
-        with conn:
-            conn.executescript(SCHEMA)
-            conn.executemany("INSERT INTO meta VALUES (?, ?)", [
-                ("cache_generation", uuid.uuid4().hex), ("parser_version", PARSER_VERSION),
-                ("schema_version", SCHEMA_VERSION)])
+    if fresh:  # todo o nada: un Ctrl+C a medias deja una BD vacía, que se puede reconstruir
+        conn.executescript(
+            "BEGIN;" + SCHEMA + "INSERT INTO meta VALUES "
+            f"('cache_generation', '{uuid.uuid4().hex}'), "
+            f"('parser_version', '{PARSER_VERSION}'), ('schema_version', '{SCHEMA_VERSION}');"
+            "COMMIT;")
     return conn
 
 
 def _cache_meta(path: Path) -> dict | None:
-    """La tabla meta si `path` es una caché de traza; None si es cualquier otra cosa."""
+    """La tabla meta si `path` es una caché de traza; {} si es una BD SQLite vacía (una
+    creación interrumpida: se puede reconstruir); None si es cualquier otra cosa."""
     try:
         c = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)  # solo lectura
         try:
+            if c.execute("SELECT 1 FROM sqlite_master").fetchone() is None:
+                return {}
             meta = dict(c.execute("SELECT key, value FROM meta"))
         finally:
             c.close()
@@ -149,10 +158,11 @@ def orphans(conn, session_id: str) -> dict[str, str]:
     """{agent_id: motivo} de los subagentes sin padre. Dos clases distintas (§6.1):
     - "sin_tool_use_id": su meta.json no dice quién lo lanzó; nunca tendrá padre (en disco:
       subagentes de skills en modo fork, p. ej. /code-review).
-    - "padre_no_encontrado": dice quién lo lanzó pero ese tool_use no está (aún) en la sesión."""
-    return {a: ("sin_tool_use_id" if tid is None else "padre_no_encontrado")
-            for a, tid, parent in conn.execute("""
-                SELECT a.agent_id, a.parent_tool_use_id,
+    - "padre_no_encontrado": dice quién lo lanzó pero ese tool_use no está (aún) en la sesión,
+      o su meta.json aún no se ha podido leer (puede llegar más tarde)."""
+    return {a: ("sin_tool_use_id" if tid is None and read else "padre_no_encontrado")
+            for a, tid, read, parent in conn.execute("""
+                SELECT a.agent_id, a.parent_tool_use_id, a.meta_read,
                        (SELECT 1 FROM events e WHERE e.session_id = a.session_id
                           AND e.kind = 'tool_use' AND e.tool_use_id = a.parent_tool_use_id)
                 FROM agents a WHERE a.session_id = ? AND a.agent_id <> 'main'""", (session_id,))

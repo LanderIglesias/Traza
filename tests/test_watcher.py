@@ -1,5 +1,6 @@
 """F2: caché SQLite + watcher (design.md §5, §6.2–6.4). Todo sobre copias en tmp_path."""
 import json
+import os
 from contextlib import closing
 import shutil
 from pathlib import Path
@@ -269,3 +270,66 @@ def test_dos_clases_de_huerfano(root, conn):
     scan(conn, root)
     assert db.orphans(conn, "sess-A") == {"fork": "sin_tool_use_id",
                                           "lost": "padre_no_encontrado"}
+
+
+# --- revisión de d5d87c4 -------------------------------------------------------------------
+
+def test_scan_toma_el_cerrojo_antes_de_leer_offsets(root, conn):
+    # Con dos escáneres a la vez (servidor + `traza.scan`), leer offsets sin cerrojo da datos
+    # viejos: IntegrityError o ignorados contados dos veces.
+    sql = []
+    conn.set_trace_callback(sql.append)
+    scan(conn, root)
+    conn.set_trace_callback(None)
+    assert sql[0] == "BEGIN IMMEDIATE"
+
+
+def test_otro_escritor_espera_en_vez_de_fallar_enseguida(tmp_path):
+    with closing(db.connect(tmp_path / "t.db")) as c:
+        assert c.execute("PRAGMA busy_timeout").fetchone()[0] >= 30_000
+
+
+def test_raiz_relativa_o_absoluta_es_la_misma(root, conn, monkeypatch):
+    scan(conn, root)
+    monkeypatch.chdir(root.parent)
+    stats = scan(conn, Path("projects"))
+    assert (stats["deleted"], stats["files_read"]) == (0, 0)
+
+
+def test_meta_json_que_llega_tarde_se_lee_aunque_el_jsonl_no_cambie(root, conn):
+    subs = root / "proj" / "sess-A" / "subagents"
+    meta = subs / "agent-abc.meta.json"
+    body = meta.read_text()
+    meta.write_text('{"agentType": "Expl')             # a medio escribir
+    scan(conn, root)
+    assert db.orphans(conn, "sess-A") == {"abc": "padre_no_encontrado"}  # aún no: no "nunca"
+    meta.write_text(body)                              # se completa; el jsonl no cambia
+    scan(conn, root)
+    assert db.agent_parents(conn, "sess-A")["abc"] == "main"
+    assert db.orphans(conn, "sess-A") == {}
+
+
+def test_primera_creacion_interrumpida_se_puede_reconstruir(tmp_path):
+    import sqlite3
+    path = tmp_path / "traza.db"
+    sqlite3.connect(path).close()                      # BD vacía: lo que deja un Ctrl+C
+    with closing(db.connect(path)) as c:
+        assert db.generation(c)
+
+
+def test_truncar_el_principal_olvida_el_titulo_viejo(root, conn):
+    scan(conn, root)
+    f = root / "proj" / "sess-A.jsonl"
+    f.write_text(f.read_text(encoding="utf-8").splitlines()[0] + "\n", encoding="utf-8",
+                 newline="\n")
+    scan(conn, root)
+    assert conn.execute("SELECT title FROM sessions WHERE session_id='sess-A'").fetchone()[0] is None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="en POSIX se puede borrar un fichero abierto")
+def test_cambio_de_version_con_la_bd_abierta_da_un_error_claro(tmp_path, monkeypatch):
+    path = tmp_path / "traza.db"
+    with closing(db.connect(path)):
+        monkeypatch.setattr(db, "PARSER_VERSION", "otra")
+        with pytest.raises(RuntimeError, match="en uso"):
+            db.connect(path)

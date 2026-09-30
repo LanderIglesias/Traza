@@ -12,13 +12,18 @@ from .parser import parse_line, parse_meta
 
 def scan(conn, root) -> dict:
     """Sincroniza la caché con los JSONL bajo `root` (~/.claude/projects). Idempotente."""
-    root = Path(root)
+    root = Path(root).resolve()  # misma ruta guardada venga como venga (relativa, mayúsculas)
     found = {str(p) for p in root.glob("*/*.jsonl")}
     found |= {str(p) for p in root.glob("*/*/subagents/agent-*.jsonl")}
     stats = {"files_read": 0, "lines": 0, "deleted": 0, "truncated": 0, "errors": 0}
     with conn:
+        # Cerrojo de escritura ANTES de leer offsets: con dos escáneres a la vez (servidor +
+        # `traza.scan`) el segundo espera y luego ve lo que escribió el primero.
+        conn.execute("BEGIN IMMEDIATE")
         known = {r[0]: r[1:] for r in conn.execute(
             "SELECT path, size, mtime_ns, offset, head FROM files")}
+        pending_meta = set(conn.execute(
+            "SELECT session_id, agent_id FROM agents WHERE agent_id <> 'main' AND meta_read = 0"))
         for path in known.keys() - found:
             _forget(conn, path)
             stats["deleted"] += 1
@@ -36,6 +41,9 @@ def scan(conn, root) -> dict:
             else:
                 size, mtime, offset, head = known[path]
                 if (st.st_size, st.st_mtime_ns) == (size, mtime):
+                    _, sid, aid = _ids(Path(path))
+                    if (sid, aid) in pending_meta:  # su meta.json puede llegar más tarde
+                        _load_meta(conn, path, sid, aid)
                     continue  # sin cambios: ni se abre
             try:
                 new_head = _head(path)
@@ -129,24 +137,33 @@ def _ingest(conn, path: str, offset: int, mtime_ns: int, head: str | None) -> in
                     first_ts = COALESCE(first_ts, ?), head = COALESCE(?, head) WHERE path = ?""",
                  (offset + len(data), mtime_ns, offset + end, first_ts, head, path))
     if agent_id != "main":
-        try:
-            text = Path(path).with_suffix(".meta.json").read_text(encoding="utf-8",
-                                                                  errors="replace")
-        except OSError:  # aún no existe o no se puede leer: se reintenta cuando el jsonl cambie
-            text = None
-        if text is not None:
-            m = parse_meta(text)
-            conn.execute("""UPDATE agents SET parent_tool_use_id = ?, agent_type = ?,
-                            description = ?, spawn_depth = ? WHERE session_id = ? AND agent_id = ?""",
-                         (m.parent_tool_use_id, m.agent_type, m.description, m.spawn_depth,
-                          session_id, agent_id))
+        _load_meta(conn, path, session_id, agent_id)
     return n
+
+
+def _load_meta(conn, path: str, session_id: str, agent_id: str) -> None:
+    """Lee el meta.json del subagente. Si aún no existe o está a medias, meta_read sigue en 0 y
+    se reintenta en el siguiente tick (aunque el .jsonl ya no cambie)."""
+    try:
+        text = Path(path).with_suffix(".meta.json").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return
+    m = parse_meta(text)
+    if m is None:
+        return
+    conn.execute("""UPDATE agents SET parent_tool_use_id = ?, agent_type = ?, description = ?,
+                    spawn_depth = ?, meta_read = 1 WHERE session_id = ? AND agent_id = ?""",
+                 (m.parent_tool_use_id, m.agent_type, m.description, m.spawn_depth,
+                  session_id, agent_id))
 
 
 def _clear(conn, path: str) -> None:
     """Borra lo leído de un fichero y lo deja para releer desde 0."""
     for table in ("events", "request_refs", "ignored"):
         conn.execute(f"DELETE FROM {table} WHERE file_path = ?", (path,))
+    _, session_id, agent_id = _ids(Path(path))
+    if agent_id == "main":  # el título salía de las líneas que ya no están
+        conn.execute("UPDATE sessions SET title = NULL WHERE session_id = ?", (session_id,))
     conn.execute("UPDATE files SET size = 0, mtime_ns = 0, offset = 0, first_ts = NULL, "
                  "head = NULL WHERE path = ?", (path,))
     # peticiones que ya nadie referencia; las compartidas pasan solas a otra dueña (vista)
