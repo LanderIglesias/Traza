@@ -61,7 +61,7 @@ JSONL real), `pyproject.toml`, `traza/parser.py`, `traza/pricing.py`, `prices.to
   informan, no fallan); las copias se informan como *known issue*. Corre solo
   en local contra datos reales; no se commitea ningún dato real.
 
-## F2 — Caché SQLite + watcher (~1 día)
+## F2 — Caché SQLite + watcher (~1 día) — ✅ tests verdes, pendiente de revisión
 
 `traza/db.py` (esquema §6.2, WAL, `meta.cache_generation`), `traza/watcher.py`.
 

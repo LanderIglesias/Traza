@@ -110,3 +110,37 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
 - La prueba en vivo creó una sesión real en
   `~/.claude/projects/C--Users-Usuario-AppData-Local-Temp-traza-f0/` (2 respuestas de Haiku,
   coste de céntimos). **Borrada el 30-09-2026** junto con los scripts desechables de `%TEMP%`.
+
+## F2 — Caché y watcher contra los datos reales (30-09-2026)
+
+`python -m traza.scan` sobre todo `~/.claude/projects` (145 ficheros, 88.983 líneas):
+
+- **Tiempos:** construcción completa 1,65–1,98 s; segunda pasada sin cambios 0,01 s (0 ficheros
+  abiertos); el fichero mayor (`3416476c`, ahora 71 MB, 21.974 líneas) 0,56 s solo.
+- **Reconstrucción:** borrar la BD y repetir da exactamente los mismos números; subir
+  `PARSER_VERSION` la reconstruye sola (generación nueva).
+- **Caché = parser puro:** 8.113 peticiones y tokens por modelo idénticos a los del parser leído
+  a mano (excluida la sesión en curso, que crece mientras se compara).
+- **Bug encontrado y corregido:** la sesión dueña salía **al revés** (la original `7bc000bb`
+  "heredaba" de la copia). Causa: la copia empieza con el **mismo prompt y el mismo
+  `timestamp`** (14:47:01.516) que la original; el watcher tomaba el inicio del primer evento y
+  empataban, y el desempate por id favorecía a la copia. Solo la primera línea (ignorada)
+  las distingue: `attachment` 14:42 en la original, `queue-operation` 14:47 en la copia. Ahora el
+  parser da el `timestamp` de toda línea y el inicio es el de la primera. Test con el caso real
+  (incluido el id de la copia ordenando antes). Resultado: `3416476c` hereda **1.274**
+  peticiones de `7bc000bb`, la cifra de F0.
+- **Subagentes huérfanos:** 6 de 88. Son los únicos `meta.json` **sin `toolUseId`** (ni
+  `description`); uno es el `/code-review` de esta sesión, lanzado por una skill en modo fork.
+  Los 82 con `toolUseId` encuentran a su padre. Enlazar los 6 (p. ej. por hora con el
+  `tool_use` de la skill) queda **sin investigar**.
+- **Sin verificar con datos reales:** subagentes anidados (0 en disco con padre distinto de
+  `main`; la regla solo está probada con fixtures) y el truncado/borrado de un fichero vivo (solo
+  en tests sobre copias).
+- **Revisión de código de F2** (`/code-review`): tres fallos corregidos con test, ninguno visto
+  en los datos reales pero todos posibles: (1) una línea con valores de tipo raro (dict donde va
+  texto, entero > 2^63) haría fallar el `INSERT`, desharía el tick y lo repetiría para siempre;
+  (2) `connect()` borraba cualquier fichero de otra cosa pasado como `--db`; (3) un fichero
+  sustituido por otro igual o más largo no se detectaba. Tras los arreglos, el disco real da los
+  mismos números (8.113 peticiones = parser puro, copia hereda 1.274); la construcción completa
+  midió 4,1 s en esa pasada (1,7–2 s en las anteriores; sin aislar si es ruido o la lectura extra
+  de la primera línea).

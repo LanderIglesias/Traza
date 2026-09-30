@@ -1,0 +1,198 @@
+"""F2: caché SQLite + watcher (design.md §5, §6.2–6.4). Todo sobre copias en tmp_path."""
+import json
+from contextlib import closing
+import shutil
+from pathlib import Path
+
+import pytest
+
+from traza import db
+from traza.parser import Tokens, tokens_by_model
+from traza.watcher import scan
+
+FIX = Path(__file__).parent / "fixtures"
+
+
+@pytest.fixture
+def root(tmp_path):
+    projects = tmp_path / "projects"
+    shutil.copytree(FIX, projects / "proj")
+    return projects
+
+
+@pytest.fixture
+def conn(tmp_path):
+    return db.connect(tmp_path / "traza.db")
+
+
+def counts(conn):
+    return {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+            for t in ("files", "sessions", "agents", "requests", "request_refs", "events")}
+
+
+def kinds(conn, file_name):
+    return [r[0] for r in conn.execute(
+        "SELECT kind FROM events WHERE file_path LIKE ? ORDER BY byte_offset, block",
+        (f"%{file_name}",))]
+
+
+def test_scan_ingesta_la_fixture_y_cuadra_con_el_parser(root, conn):
+    scan(conn, root)
+    assert counts(conn) == {"files": 3, "sessions": 2, "agents": 3, "requests": 6,
+                            "request_refs": 7, "events": 24}
+    assert tokens_by_model(db.requests(conn)) == {
+        "claude-sonnet-5": Tokens(19, 81, 300, 30, 40),
+        "claude-haiku-4-5-20251001": Tokens(10, 14, 0, 0, 0),
+    }
+    assert db.ignored_counts(conn)["attachment"] == 1
+    assert conn.execute("SELECT title FROM sessions WHERE session_id='sess-A'").fetchone()[0] \
+        == "Listar ficheros"
+
+
+def test_scan_dos_veces_no_duplica_ni_relee(root, conn):
+    first = scan(conn, root)
+    before = counts(conn)
+    second = scan(conn, root)
+    assert counts(conn) == before
+    assert first["files_read"] == 3 and second["files_read"] == 0
+
+
+def test_linea_a_medias_se_lee_cuando_se_completa(root, conn):
+    f = root / "proj" / "live.jsonl"
+    full = json.dumps({"type": "user", "uuid": "l2", "timestamp": "2026-01-02T00:00:01.000Z",
+                       "message": {"role": "user", "content": "segunda"}})
+    first = json.dumps({"type": "user", "uuid": "l1", "timestamp": "2026-01-02T00:00:00.000Z",
+                        "message": {"role": "user", "content": "primera"}})
+    f.write_text(first + "\n" + full[:20], encoding="utf-8", newline="\n")
+    scan(conn, root)
+    assert kinds(conn, "live.jsonl") == ["prompt"]          # la línea a medias no entra
+    with open(f, "a", encoding="utf-8", newline="\n") as fh:
+        fh.write(full[20:] + "\n")
+    scan(conn, root)
+    assert kinds(conn, "live.jsonl") == ["prompt", "prompt"]  # ni unknown ni duplicado
+    uuids = [r[0] for r in conn.execute(
+        "SELECT uuid FROM events WHERE file_path LIKE '%live.jsonl' ORDER BY byte_offset")]
+    assert uuids == ["l1", "l2"]
+
+
+def test_truncado_reprocesa_desde_cero(root, conn):
+    scan(conn, root)
+    f = root / "proj" / "sess-B.jsonl"
+    f.write_text(f.read_text(encoding="utf-8").splitlines()[0] + "\n", encoding="utf-8",
+                 newline="\n")
+    scan(conn, root)
+    assert kinds(conn, "sess-B.jsonl") == ["prompt"]
+    assert "req_9" not in {r.request_id for r in db.requests(conn)}
+
+
+def test_borrado_en_cascada_y_reasignacion_de_duena(root, conn):
+    scan(conn, root)
+    assert db.owners(conn)["req_1"] == "sess-A"
+    shutil.rmtree(root / "proj" / "sess-A")
+    (root / "proj" / "sess-A.jsonl").unlink()
+    scan(conn, root)
+    assert kinds(conn, "sess-A.jsonl") == []
+    assert [r[0] for r in conn.execute("SELECT session_id FROM sessions")] == ["sess-B"]
+    # req_1 sigue viva en la copia y pasa a ser suya; las exclusivas de A desaparecen
+    assert db.owners(conn) == {"req_1": "sess-B", "req_9": "sess-B"}
+
+
+def test_duena_no_depende_del_orden_de_ingesta(root, conn):
+    a = root.parent / "aparte"
+    shutil.move(root / "proj" / "sess-A.jsonl", a)
+    scan(conn, root)                       # primero solo la copia
+    assert db.owners(conn)["req_1"] == "sess-B"
+    shutil.move(a, root / "proj" / "sess-A.jsonl")
+    scan(conn, root)                       # aparece la original, más antigua
+    assert db.owners(conn)["req_1"] == "sess-A"
+    assert db.inherited(conn, "sess-B") == {"sess-A": 1}
+    assert db.inherited(conn, "sess-A") == {}
+
+
+def test_jerarquia_anidada_y_huerfano(root, conn):
+    subs = root / "proj" / "sess-A" / "subagents"
+    # nieto: lo lanzó el subagente abc con toolu_s1
+    (subs / "agent-def.jsonl").write_text("", encoding="utf-8")
+    (subs / "agent-def.meta.json").write_text(json.dumps({"agentType": "x", "toolUseId": "toolu_s1"}))
+    # huérfano: su toolUseId no está en ningún fichero de la sesión
+    (subs / "agent-zzz.jsonl").write_text("", encoding="utf-8")
+    (subs / "agent-zzz.meta.json").write_text(json.dumps({"agentType": "y", "toolUseId": "toolu_nope"}))
+    scan(conn, root)
+    assert db.agent_parents(conn, "sess-A") == {"main": None, "abc": "main", "def": "abc",
+                                                "zzz": None}
+
+
+def test_cambio_de_parser_version_reconstruye_la_bd(tmp_path, monkeypatch):
+    path = tmp_path / "traza.db"
+
+    def gen():  # se cierra la conexión: Windows no deja borrar un fichero abierto
+        with closing(db.connect(path)) as c:
+            return db.generation(c)
+    gen1 = gen()
+    assert gen() == gen1                                    # misma versión: se reutiliza
+    monkeypatch.setattr(db, "PARSER_VERSION", "otra")
+    assert gen() != gen1                                    # otra versión: BD nueva
+
+
+def test_duena_por_primera_linea_del_fichero_aunque_sea_ignorada(tmp_path, conn):
+    # Caso real (7bc000bb / 3416476c): la copia empieza con el mismo prompt y el mismo timestamp
+    # que la original; solo la primera línea (ignorada) las distingue. Y el id de la copia va
+    # antes alfabéticamente, así que un desempate por id daría la dueña equivocada.
+    proj = tmp_path / "projects" / "p"
+    proj.mkdir(parents=True)
+    prompt = {"type": "user", "uuid": "u", "timestamp": "2026-01-01T10:05:00.000Z",
+              "message": {"role": "user", "content": "hola"}}
+    answer = {"type": "assistant", "uuid": "a", "requestId": "req_X",
+              "timestamp": "2026-01-01T10:05:01.000Z",
+              "message": {"model": "claude-sonnet-5", "content": [], "usage": {}}}
+
+    def write(name, first):
+        (proj / name).write_text("".join(json.dumps(d) + "\n" for d in (first, prompt, answer)),
+                                 encoding="utf-8", newline="\n")
+    write("zz-original.jsonl", {"type": "attachment", "timestamp": "2026-01-01T10:00:00.000Z"})
+    write("aa-copia.jsonl", {"type": "queue-operation", "timestamp": "2026-01-01T10:04:59.000Z"})
+    scan(conn, tmp_path / "projects")
+    assert db.owners(conn) == {"req_X": "zz-original"}
+
+
+def test_valores_de_tipo_raro_no_bloquean_el_watcher(tmp_path, conn):
+    # Si SQLite rechazara una fila, el tick entero se desharía y se repetiría para siempre.
+    proj = tmp_path / "projects" / "p"
+    proj.mkdir(parents=True)
+    raras = [
+        {"type": "user", "uuid": {"x": 1}, "timestamp": ["t"], "origin": {"kind": {}},
+         "message": {"role": "user", "content": "hola"}},
+        {"type": "assistant", "uuid": "a", "timestamp": "t", "requestId": "r1",
+         "message": {"model": {"m": 1}, "stop_reason": [], "content": [
+             {"type": "tool_use", "id": {}, "name": [], "input": {}}],
+             "usage": {"input_tokens": 2 ** 70, "output_tokens": "5", "speed": {}}}},
+    ]
+    normal = {"type": "user", "uuid": "ok", "timestamp": "t", "message": {"content": "sigue"}}
+    (proj / "s.jsonl").write_text("".join(json.dumps(d) + "\n" for d in raras + [normal]),
+                                  encoding="utf-8", newline="\n")
+    scan(conn, tmp_path / "projects")
+    assert kinds(conn, "s.jsonl") == ["prompt", "tool_use", "prompt"]
+    (req,) = db.requests(conn)
+    assert (req.model, req.tokens.input, req.tokens.output) == (None, None, None)
+
+
+def test_connect_se_niega_a_borrar_lo_que_no_es_su_cache(tmp_path):
+    ajeno = tmp_path / "importante.db"
+    ajeno.write_bytes(b"no soy una cache de traza")
+    with pytest.raises(RuntimeError):
+        db.connect(ajeno)
+    assert ajeno.read_bytes() == b"no soy una cache de traza"
+
+
+def test_fichero_sustituido_por_otro_mas_largo_se_reprocesa(root, conn):
+    scan(conn, root)
+    f = root / "proj" / "sess-B.jsonl"
+    old_size = f.stat().st_size
+    nuevo = [json.dumps({"type": "user", "uuid": f"n{i}", "timestamp": "2026-02-01T00:00:00.000Z",
+                         "message": {"content": "x" * 2000}}) for i in range(5)]
+    f.write_text("\n".join(nuevo) + "\n", encoding="utf-8", newline="\n")
+    assert f.stat().st_size >= old_size  # si no, sería el caso "truncado", que ya se detecta
+    scan(conn, root)
+    uuids = [r[0] for r in conn.execute(
+        "SELECT uuid FROM events WHERE file_path LIKE '%sess-B.jsonl' ORDER BY byte_offset")]
+    assert uuids == [f"n{i}" for i in range(5)]

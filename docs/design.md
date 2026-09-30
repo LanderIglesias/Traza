@@ -100,12 +100,21 @@ tras usar v1 se echa de menos. Requiere modificar `settings.json` con instalador
      `projects/*/*/subagents/*.jsonl` (subagentes). No se usa `**` para no recorrer carpetas
      que no contienen transcripts;
    - `os.stat()` de cada fichero registrado; si `(mtime, size)` no cambió, no lo abre;
-   - lee desde el offset guardado **solo líneas completas** (terminadas en `\n`); el resto queda
-     en un buffer por fichero;
-   - `size < offset` o `size == 0` → truncado: reprocesa desde 0;
+   - lee desde el offset guardado **solo líneas completas** (terminadas en `\n`); una línea a
+     medias no se consume: el offset se queda al principio de ella y se relee en el siguiente
+     tick (sin buffer en memoria, sin estado extra);
+   - `size < offset`, o la **huella de la primera línea** (`files.head`) cambió → truncado o
+     sustituido: borra los datos del fichero y reprocesa desde 0;
+   - un fichero que desaparece o está bloqueado entre el `stat` y la lectura no tumba el tick:
+     borrado en cascada o reintento en el siguiente;
+   - **ningún valor del JSON llega a SQLite sin normalizar**: el parser solo emite texto, enteros
+     de 64 bits o `None` (un dict o un entero gigante haría fallar el `INSERT`, se desharía el
+     tick entero y se repetiría para siempre);
    - `FileNotFoundError` → borrado en cascada de sus datos + evento SSE de borrado;
-   - la carga inicial de un fichero grande (hay uno de 43 MB) va a `asyncio.to_thread` con
-     **su propia conexión** SQLite.
+   - la carga inicial va a `asyncio.to_thread` con **su propia conexión** SQLite [medido en F2:
+     todo el disco, 145 ficheros y 89k líneas, en 1,7–2 s; el mayor, 71 MB, en 0,56 s].
+   - Un subagente cuyo `meta.json` no trae `toolUseId` (6 de 88 en disco, lanzados por skills en
+     modo fork u otros mecanismos) queda como raíz con "padre desconocido".
    - Coste a vigilar: N `stat()` cada 0,5 s (antivirus en Windows). Se mide si la carpeta crece.
 2. **Parser** — funciones puras, sin I/O ni dependencias: línea JSON → registros para `requests`,
    `events`, `agents`, `sessions`. Es la pieza con más tests.
@@ -138,13 +147,16 @@ se reconecta solo.
 | `meta` | `key` | `cache_generation` (uuid al crear la BD), `parser_version` |
 | `files` | `path` | `session_id`, `agent_id` (`main` para el fichero principal; el id del subagente para `subagents/agent-<id>.jsonl`), `size`, `mtime`, `offset` |
 | `sessions` | `session_id` | proyecto, `cwd`, título (`ai-title`/`custom-title`), inicio, última actividad |
-| `agents` | `(session_id, agent_id)` | `parent_agent_id` (NULL = raíz/huérfano), `parent_tool_use_id`, `agent_type`, `description`, `spawn_depth` |
-| `requests` | `request_id` | `owner_session_id`, `owner_agent_id`, hora, modelo, `input`, `output`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `speed`, `inference_geo`, `web_search_requests`, `stop_reason` |
+| `agents` | `(session_id, agent_id)` | `parent_tool_use_id`, `agent_type`, `description`, `spawn_depth`. El **padre se deriva** al consultar (§6.1): no depende del orden de ingesta |
+| `requests` | `request_id` | hora, modelo, `input`, `output`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `speed`, `inference_geo`, `web_search_requests`, `stop_reason` |
+| `request_refs` | `(request_id, file_path)` | `session_id`, `agent_id`: qué ficheros contienen líneas de cada petición (también las que solo tienen `thinking` y no crean evento) |
+| `ignored` | `(file_path, type)` | `n`: contador de líneas ignoradas por tipo, para la barra de salud |
 | `events` | `id INTEGER PRIMARY KEY AUTOINCREMENT` | `(file_path, byte_offset, block)` UNIQUE, `uuid` (solo verificación), `session_id`, `agent_id`, hora, `kind`, `tool_name`, `tool_use_id`, `is_error`, `input_hash`, `origin`, `request_id`, `file_path`, `byte_offset`, `length` |
 
 Índices: `events(agent_id, id)`, `events(tool_use_id)`, `events(uuid)`, `events(request_id)`,
-`agents(session_id)`,
-`agents(session_id, parent_agent_id)`.
+`events(file_path)`, `request_refs(file_path)`, `request_refs(session_id)`.
+Vista `request_owner(request_id, owner_session_id, owner_agent_id)`: la dueña **se calcula**,
+no se guarda (ver "Sesión dueña").
 
 **Claves (decisiones con datos):**
 - **Idempotencia de `events` por posición, no por `uuid`:** `(file_path, byte_offset, block)`.
@@ -160,27 +172,29 @@ se reconecta solo.
   idéntico en las 3.407 líneas copiadas y 1.273 de las 1.274 peticiones conservan su
   `timestamp` original [verificado]. Con clave compuesta el coste total contaría dos veces cada
   petición heredada; con clave global se cuenta una vez.
-- **Sesión dueña** de una petición = la sesión que **empezó antes** (primer `timestamp` del
-  fichero principal; `7bc000bb` 14:42 frente a `3416476c` 14:47). No depende del orden de
-  ingesta: si la copia se procesa primero y luego aparece una sesión más antigua con la misma
-  petición, la dueña se actualiza. En la copia, esos eventos se muestran como **heredados**
-  (visibles, sin sumar coste).
-- **Borrado y copias:** al desaparecer un fichero se borran sus eventos; después, cada petición
-  cuya dueña ya no existe se **reasigna** a la sesión viva más antigua que aún tenga eventos
-  apuntándola, y solo se borra si ninguna la referencia. Así, cuando Claude Code borre la
+- **Sesión dueña** de una petición = la sesión que **empezó antes** (`timestamp` de la **primera
+  línea del fichero principal, sea del tipo que sea**, también ignorada: la copia empieza con el
+  mismo prompt y el mismo `timestamp` que la original, solo la primera línea las distingue
+  [verificado en F2, `findings.md` §F2]; `7bc000bb` 14:42 frente a `3416476c` 14:47). Se calcula con la vista
+  `request_owner` sobre `request_refs` + `sessions.started_at` (desempate por `session_id`),
+  así que **no depende del orden de ingesta** y no hay nada que actualizar. En la copia, esos
+  eventos se muestran como **heredados** (visibles, sin sumar coste).
+- **Borrado y copias:** al desaparecer un fichero se borran sus eventos y sus `request_refs`; las
+  peticiones que ya no tienen ninguna referencia se borran. La **reasignación es automática**:
+  la vista elige la siguiente sesión viva más antigua. Así, cuando Claude Code borre la
   original a los 30 días, la copia recupera el coste de lo heredado en vez de quedarse a 0.
 - **Coste heredado sin reparsear:** no hace falta un campo `inherited_from_session_id` en
   `requests`, porque una petición puede estar heredada por varias sesiones y una columna solo
-  guarda una. Se deriva con una consulta: las peticiones heredadas por la sesión `S` son las de
-  sus eventos cuyo dueño es otra sesión.
+  guarda una. Se deriva con una consulta: las peticiones heredadas por la sesión `S` son las que
+  `S` referencia y cuya dueña es otra sesión.
   ```sql
-  SELECT r.owner_session_id, COUNT(DISTINCT r.request_id)
-  FROM events e JOIN requests r ON r.request_id = e.request_id
-  WHERE e.session_id = :S AND r.owner_session_id <> :S
-  GROUP BY r.owner_session_id
+  SELECT o.owner_session_id, COUNT(*)
+  FROM (SELECT DISTINCT request_id FROM request_refs WHERE session_id = :S) r
+  JOIN request_owner o USING (request_id)
+  WHERE o.owner_session_id <> :S
+  GROUP BY o.owner_session_id
   ```
-  Con eso la UI puede pintar cualquiera de las tres presentaciones de §7 (índice
-  `events(request_id)` ya previsto).
+  Con eso la UI puede pintar cualquiera de las tres presentaciones de §7.
 
 ### 6.3 Reglas de ingesta
 
@@ -247,6 +261,8 @@ NULL en el hilo principal **no** significa "del usuario" ni "encargo".
 
 **La caché es desechable; la fuente de verdad son los JSONL.**
 - Se puede borrar `~/.traza/traza.db` en cualquier momento y se reconstruye.
+- traza solo borra un fichero de BD si es **suya** (tabla `meta` con `cache_generation`); una ruta
+  `--db` que apunte a otra cosa da error y no se toca.
 - No hay migraciones de esquema: si cambia el esquema o `parser_version`, se borra y reconstruye.
 - Espejo de lo que hay en disco: si Claude Code borra un JSONL, traza borra sus datos.
 - [verificado en docs, *Data usage*] Claude Code guarda los transcripts **30 días** por defecto
