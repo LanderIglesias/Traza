@@ -340,3 +340,25 @@ def test_raiz_con_otras_mayusculas_es_la_misma(root, conn):
     scan(conn, root)
     stats = scan(conn, Path(str(root).upper()))
     assert (stats["deleted"], stats["files_read"]) == (0, 0)
+
+
+def test_output_que_crece_en_otro_tick_actualiza_la_peticion(root, conn):
+    # La línea final de una respuesta (output completo) puede llegar en un tick posterior.
+    f = root / "proj" / "live.jsonl"
+    def line(out):
+        return json.dumps({"type": "assistant", "uuid": f"a{out}", "requestId": "req_live",
+                           "timestamp": "2026-01-02T00:00:00.000Z", "message": {
+                               "model": "claude-sonnet-5", "content": [{"type": "text", "text": "x"}],
+                               "stop_reason": None if out < 100 else "tool_use",
+                               "usage": {"input_tokens": 2, "output_tokens": out,
+                                         "cache_read_input_tokens": 0, "cache_creation": {
+                                             "ephemeral_5m_input_tokens": 0,
+                                             "ephemeral_1h_input_tokens": 0}}}}) + "\n"
+    f.write_text(line(8), encoding="utf-8", newline="\n")
+    scan(conn, root)
+    with open(f, "a", encoding="utf-8", newline="\n") as fh:
+        fh.write(line(257))
+    scan(conn, root)
+    got = {r.request_id: r for r in db.requests(conn)}["req_live"]
+    assert got.tokens.output == 257
+    assert got.stop_reason == "tool_use"      # el último no nulo, llegado en el segundo tick

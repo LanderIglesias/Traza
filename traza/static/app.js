@@ -3,8 +3,10 @@
 
 const $ = (id) => document.getElementById(id);
 const SVG_NS = "http://www.w3.org/2000/svg";   // identificador del estándar, no una petición
-const STATE_LABEL = { tool: "Running tool", thinking: "Thinking", idle: "Idle" };
-const ui = { data: null, filter: "all", selected: null };
+const STATE_LABEL = { tool: "Running tool", thinking: "Thinking", idle: "Idle", done: "Done" };
+// collapsed: "sesión/agente" plegados; sobrevive a los re-render de cada tick SSE (F4)
+const ui = { data: null, filter: "all", selected: null, collapsed: new Set(), sort: null };
+const ORPHAN_MARK = { sin_tool_use_id: "skill fork", padre_no_encontrado: "parent unknown" };
 
 // --- formato ---------------------------------------------------------------------------------
 // Tres casos (§6.6): todo con precio "$X", parte "$X+", nada con precio "?" (v === null)
@@ -52,6 +54,7 @@ function icon(paths) {
   }
   return svg;
 }
+const CHEVRON = ["M6 9l6 6 6-6"];
 const ALERT = ["M12 8v5", "M12 16.5v.01", "M10.3 3.9 2.6 17.3A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.7L13.7 3.9a2 2 0 0 0-3.4 0Z"];
 
 function pill(state) {
@@ -145,10 +148,11 @@ async function renderPanel() {
   const wanted = ui.selected;
   const r = await fetch(`/api/sessions/${encodeURIComponent(wanted)}`);
   if (seq !== panelSeq) return;   // llegó una petición más nueva: no pintar datos viejos
-  if (!r.ok) {                     // la sesión desapareció del disco (limpieza de 30 días)
+  if (r.status === 404) {          // la sesión desapareció del disco (limpieza de 30 días)
     ui.selected = null;
     return renderPanel();
   }
+  if (!r.ok) return;               // fallo pasajero: se conserva la selección; el próximo tick reintenta
   const s = await r.json();
   if (seq !== panelSeq) return;
   $("panel-empty").hidden = true;
@@ -167,6 +171,86 @@ async function renderPanel() {
   $("p-agents").textContent = String(s.agents);
   $("p-models").replaceChildren(...Object.entries(s.models).map(([m, n]) =>
     el("li", {}, el("span", { text: m }), el("span", { className: "n", text: `${n.toLocaleString("en-US")} ${n === 1 ? "request" : "requests"}` }))));
+  renderTree(s);
+}
+
+// --- árbol de agentes (F4) -----------------------------------------------------------------------
+const perOut = (n) => (n.cost === null || !n.output ? null : (n.cost / n.output) * 1e6);
+const SORT_KEY = { cost: (n) => n.cost, total: (n) => n.total.cost, per_out: perOut };
+
+function sortSiblings(list) {
+  if (!ui.sort) return list;                       // sin orden elegido: por hora de inicio
+  const key = SORT_KEY[ui.sort.key];
+  return [...list].sort((a, b) => {
+    const x = key(a), y = key(b);
+    if (x === null || y === null) return (x === null) - (y === null);   // "?" siempre al final
+    return (x - y) * ui.sort.dir;
+  });
+}
+
+function agentRow(s, n, depth, hasKids) {
+  const key = `${s.id}/${n.id}`;
+  const open = !ui.collapsed.has(key);
+  const name = n.id === "main" ? "Main agent" : n.type || `Agent ${n.id.slice(0, 7)}`;
+  const toggle = hasKids
+    ? el("button", { type: "button", className: "toggle", "aria-expanded": String(open),
+        "aria-label": `${open ? "Collapse" : "Expand"} ${name}` }, icon(CHEVRON))
+    : el("span", { className: "toggle-gap" });
+  if (hasKids) toggle.addEventListener("click", () => {
+    ui.collapsed[open ? "add" : "delete"](key);
+    renderTree(s);
+    $("tree-rows").querySelector(`[data-agent="${CSS.escape(n.id)}"] .toggle`)?.focus();
+  });
+  const desc = n.orphan === "sin_tool_use_id" ? n.task : n.description;
+  const cell = el("div", { className: "agent-cell" }, toggle,
+    el("span", {},
+      n.orphan ? el("span", { className: "mark", "data-kind": n.orphan, text: ORPHAN_MARK[n.orphan] }) : null,
+      el("span", { className: "agent-name", text: name }),
+      desc ? el("span", { className: "agent-desc", text: desc, title: desc }) : null));
+  cell.style.setProperty("--depth", depth);
+  const po = perOut(n);
+  return el("tr", { "data-agent": n.id, "data-parent": n.parent ?? (n.orphan ? "(orphan)" : "(root)") },
+    el("td", {}, cell),
+    el("td", {}, pill(n.state)),
+    // data-label: en móvil cada fila es una tarjeta y la cabecera no se ve
+    el("td", { className: "num", "data-label": "Own", text: money(n.cost, n.unpriced) }),
+    el("td", { className: "num", "data-label": "Incl. subagents", text: money(n.total.cost, n.total.unpriced) }),
+    el("td", { className: "num", "data-label": "Output", text: n.output === null ? "?" : n.output.toLocaleString("en-US") }),
+    el("td", { className: "num", "data-label": "$/1M out", text: po === null ? "–" : money(po) }));
+}
+
+function renderTree(s) {
+  const kids = new Map();
+  for (const n of s.tree) {
+    const p = n.orphan ? "(orphan)" : n.parent ?? "(root)";
+    if (!kids.has(p)) kids.set(p, []);
+    kids.get(p).push(n);
+  }
+  const walk = (parent, depth, out) => {
+    for (const n of sortSiblings(kids.get(parent) || [])) {
+      const has = kids.has(n.id);
+      out.push(agentRow(s, n, depth, has));
+      if (has && !ui.collapsed.has(`${s.id}/${n.id}`)) walk(n.id, depth + 1, out);
+    }
+    return out;
+  };
+  $("tree-rows").replaceChildren(...walk("(root)", 0, []));
+  const orphans = walk("(orphan)", 0, []);
+  $("orphan-rows").replaceChildren(...(orphans.length ? [
+    el("tr", { className: "orphan-h" }, el("td", { colSpan: 6, text: "Not attached to a parent agent" })),
+    ...orphans] : []));
+  for (const th of document.querySelectorAll(".tree th[data-sort]")) {
+    if (ui.sort?.key === th.dataset.sort) th.setAttribute("aria-sort", ui.sort.dir < 0 ? "descending" : "ascending");
+    else th.removeAttribute("aria-sort");
+  }
+}
+
+for (const th of document.querySelectorAll(".tree th[data-sort]")) {
+  th.querySelector("button").addEventListener("click", () => {
+    const k = th.dataset.sort;       // 1er clic: mayor primero; 2º: menor; 3º: sin orden
+    ui.sort = ui.sort?.key !== k ? { key: k, dir: -1 } : ui.sort.dir < 0 ? { key: k, dir: 1 } : null;
+    renderPanel();
+  });
 }
 
 function select(id) {

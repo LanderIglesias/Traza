@@ -178,3 +178,18 @@ def test_apagar_con_una_pestana_abierta_no_espera_al_timeout(tmp_path):
     srv.handle_exit(signal.SIGINT, None)
     th.join(10)
     assert not th.is_alive() and time.perf_counter() - t0 < 2.0
+
+
+def test_cada_peticion_http_lee_una_foto_coherente(tmp_path):
+    # Un endpoint hace varias consultas; si el watcher hace commit entre dos, sin transacción la
+    # segunda ve filas que la primera no vio (KeyError en vivo en agent_tree → 500 → el panel
+    # se vaciaba). Con una transacción de lectura (WAL) todas ven la misma foto.
+    from traza import db
+    path = tmp_path / "t.db"
+    writer = db.connect(path)
+    with server.reader(path) as conn:
+        before = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+        with writer:
+            writer.execute("INSERT INTO sessions VALUES ('nueva', 'p', NULL)")
+        assert conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == before
+    writer.close()

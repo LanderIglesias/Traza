@@ -7,7 +7,7 @@ cada uno con su conexión de solo lectura (WAL: los lectores no esperan al escri
 import asyncio
 import json
 import sqlite3
-from contextlib import asynccontextmanager, closing
+from contextlib import asynccontextmanager, closing, contextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -23,6 +23,18 @@ HEARTBEAT_S = 15
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; "
        "img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; "
        "frame-ancestors 'none'")
+
+
+@contextmanager
+def reader(db_path):
+    """Conexión de solo lectura para UNA petición HTTP, dentro de una transacción de lectura: todas
+    sus consultas ven la misma foto aunque el watcher haga commit en medio (WAL: no le bloquea)."""
+    conn = sqlite3.connect(f"{Path(db_path).resolve().as_uri()}?mode=ro", uri=True)
+    try:
+        conn.execute("BEGIN")
+        yield conn
+    finally:
+        conn.close()
 
 
 class Hub:
@@ -100,9 +112,6 @@ def create_app(db_path, root, port: int, interval: float = 0.5,
     hub = Hub()
     state = {"generation": None, "tick": 0}
 
-    def reader() -> sqlite3.Connection:
-        return sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
-
     async def on_tick(stats: dict) -> None:
         if stats["files_read"] or stats["deleted"]:  # solo si algo cambió
             state["tick"] += 1
@@ -145,12 +154,12 @@ def create_app(db_path, root, port: int, interval: float = 0.5,
 
     @app.get("/api/overview")
     def overview():
-        with closing(reader()) as conn:
+        with reader(db_path) as conn:
             return views.overview(conn)
 
     @app.get("/api/sessions/{session_id}")
     def session(session_id: str):
-        with closing(reader()) as conn:
+        with reader(db_path) as conn:
             s = views.session_summary(conn, session_id)
         if s is None:
             raise HTTPException(404)

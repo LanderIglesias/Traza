@@ -2,8 +2,10 @@
 
 Sin I/O ni estado. Las reglas están en docs/design.md §6.3.
 """
+import dataclasses
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
@@ -49,6 +51,8 @@ class Event:
     input_hash: str | None = None
     origin: str | None = None   # solo prompt: "human", "task-notification", "meta" (inyectado)…
     denial: str | None = None   # solo tool_result con error: toolDenialKind (no se ejecutó)
+    agent_ref: str | None = None     # subagente al que se refiere (lanzamiento o notificación)
+    agent_status: str | None = None  # async_launched, completed, forked, failed, stopped…
 
 
 @dataclass
@@ -94,17 +98,20 @@ def _modifier(x) -> str | None:
     return None if x is None else (x if isinstance(x, str) else "?")
 
 
+def prompt_text(content) -> str:
+    """Texto de un prompt: cadena, o los bloques `text` de una lista (imágenes fuera)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(b["text"] for b in content
+                        if isinstance(b, dict) and isinstance(b.get("text"), str))
+    return ""
+
+
 def _prompt_origin(d: dict, content) -> str | None:
     """De dónde viene un prompt (design.md §6.3). "interrupted" y "local-command" son líneas que el
     modelo no contesta (en disco: 1 de 9 y 0 de 21), así que no dejan al agente "pensando"."""
-    if isinstance(content, str):
-        text = content
-    elif isinstance(content, list):
-        text = " ".join(b["text"] for b in content
-                        if isinstance(b, dict) and isinstance(b.get("text"), str))
-    else:
-        text = ""
-    head = text.lstrip()
+    head = prompt_text(content).lstrip()
     if head.startswith("[Request interrupted"):
         return "interrupted"
     # solo si la línea EMPIEZA así: un prompt humano que las contiene (texto pegado) es humano
@@ -114,6 +121,15 @@ def _prompt_origin(d: dict, content) -> str | None:
         return "meta"
     o = d.get("origin")
     return _str(o.get("kind")) if isinstance(o, dict) else None
+
+
+def _task_notification(content) -> tuple[str | None, str | None]:
+    """(agente, estado) de un prompt <task-notification>. Si nombra varias tareas (resumen de
+    una sesión anterior) no se atribuye a ninguna."""
+    text = content if isinstance(content, str) else ""
+    ids = re.findall(r"<task-id>([^<]*)</task-id>", text)
+    status = re.search(r"<status>([^<]*)</status>", text)
+    return (ids[0] if len(ids) == 1 else None), (status.group(1) if status else None)
 
 
 def parse_line(line: str) -> Parsed:
@@ -132,6 +148,13 @@ def _parse(d) -> Parsed:
     if not isinstance(d, dict):
         raise TypeError("la línea no es un objeto")
     t, uuid, ts = d.get("type"), _str(d.get("uuid")), _str(d.get("timestamp"))
+    a = d.get("attachment")
+    if (t == "attachment" and isinstance(a, dict) and a.get("type") == "queued_command"
+            and a.get("commandMode") == "task-notification"):
+        # fin de un subagente entregado con el agente ocupado (encolado): no es un prompt
+        ref, status = _task_notification(a.get("prompt"))
+        return Parsed(events=[Event("task_notification", 0, uuid, ts,
+                                    agent_ref=ref, agent_status=status)])
     if t in IGNORED_TYPES:
         return Parsed(ignored=t)
     if t in ("ai-title", "custom-title"):
@@ -155,13 +178,21 @@ def _parse(d) -> Parsed:
             if isinstance(content, list) else []
         if not results:  # prompt: un evento por línea; el contenido completo se lee bajo demanda
             origin = _prompt_origin(d, content)
-            return Parsed(events=[Event("prompt", 0, uuid, ts, origin=origin)])
+            ref, status = (_task_notification(content) if origin == "task-notification"
+                           else (None, None))
+            return Parsed(events=[Event("prompt", 0, uuid, ts, origin=origin,
+                                        agent_ref=ref, agent_status=status)])
         # toolDenialKind es de la línea, pero solo describe a los resultados con error
         denial = _modifier(d.get("toolDenialKind"))
+        # toolUseResult también es de la línea: solo se atribuye si hay un único resultado
+        tur = d.get("toolUseResult")
+        ref, status = ((_str(tur.get("agentId")), _str(tur.get("status")))
+                       if isinstance(tur, dict) and len(results) == 1 else (None, None))
         return Parsed(events=[
             Event("tool_result", i, uuid, ts, tool_use_id=_str(b.get("tool_use_id")),
                   is_error=bool(b.get("is_error")),
-                  denial=denial if b.get("is_error") else None) for i, b in results])
+                  denial=denial if b.get("is_error") else None,
+                  agent_ref=ref, agent_status=status) for i, b in results])
     if t == "assistant":
         rid = d.get("requestId")
         if not isinstance(content, list) or not isinstance(rid, (str, type(None))):
@@ -207,10 +238,19 @@ def _request(rid: str, msg: dict, ts: str | None) -> Request:
 
 
 def dedupe_requests(requests) -> dict[str, Request]:
-    """Una petición por requestId; gana la primera (Claude Code repite el usage en cada línea)."""
+    """Una petición por requestId. Claude Code repite el usage en cada línea de la respuesta, pero
+    output_tokens CRECE mientras la escribe (8 → 257; findings.md §F4): se queda el mayor visto,
+    sea cual sea el orden. stop_reason: el último no nulo (solo lo lleva la línea que lo sabe).
+    El resto de campos no cambia entre líneas: los de la primera."""
     out = {}
     for r in requests:
-        out.setdefault(r.request_id, r)
+        first = out.setdefault(r.request_id, r)
+        o, new = first.tokens.output, r.tokens.output
+        if new is not None and (o is None or new > o):
+            first = dataclasses.replace(first, tokens=first.tokens._replace(output=new))
+        if r.stop_reason is not None:
+            first = dataclasses.replace(first, stop_reason=r.stop_reason)
+        out[r.request_id] = first
     return out
 
 

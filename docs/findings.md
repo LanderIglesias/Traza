@@ -213,3 +213,42 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
   sesión e ignorados. Build completo 1,91 s → 1,90 s. Navegador con el servidor viejo abierto →
   servidor nuevo sobre la misma caché: la reconstruye (generación nueva) y la pestaña recarga
   sola (`navigation.type = "reload"`).
+- **Bug de F1 corregido: `output_tokens` se tomaba de la primera línea.** En 374 peticiones el
+  mismo `requestId` aparece en varias líneas con `output_tokens` que **crece** (8 → 257); input y
+  caché no cambian. "Gana la primera" contaba 1.827 tokens de salida en vez de 207.240. Ahora:
+  `output` = el mayor visto (parser y upsert del watcher, entre ticks). Sobre la copia congelada
+  solo cambia eso: +205.413 tokens de salida, coste total $981,05 → **$983,43**. Los tests no lo
+  veían porque la fixture no tenía el caso y el oráculo comparaba dos caminos con la misma regla.
+  Nota: en 2.1.284 hay respuestas cuyo `output_tokens` se queda en 1 en **todas** sus líneas
+  (p. ej. texto + tool_use); ese número está mal en el propio JSONL y traza no puede corregirlo.
+- **Carrera en lectura (500 en vivo).** Cada endpoint hace varias consultas; sin transacción, un
+  commit del watcher entre dos de ellas daba `KeyError` en `agent_tree` (petición vista por una
+  consulta y no por la otra) y el panel se vaciaba. Ahora cada petición HTTP lee en **una**
+  transacción de lectura (foto coherente en WAL). Además el cliente solo suelta la sesión
+  seleccionada ante un 404, no ante cualquier error.
+- **"Terminado" de un subagente — cómo lo escribe Claude Code** (93 subagentes en disco):
+  `toolUseResult.status` en el `tool_result` del padre: `async_launched` 67 (segundo plano: es el
+  **lanzamiento**, no el fin), `completed` 15, `forked` 11 (skill fork, con su `agentId`: permitiría
+  enlazarlo con su padre; no implementado, ver pendientes). En segundo plano el fin llega como
+  `<task-notification>` con `<task-id>` y `<status>` (`completed`/`failed`/`stopped`): como prompt
+  si el agente estaba parado, o **encolada** como `attachment` `queued_command` con
+  `commandMode: "task-notification"` si estaba ocupado (visto solo en vivo, 2.1.284). Dentro de un
+  subagente, el resultado de un hijo de primer plano no lleva `toolUseResult`. Con las tres
+  fuentes: 90 de 93 "done"; los 3 restantes nunca tienen fin registrado (2 están en un resumen
+  "No completion record was found… may have been stopped" que nombra varias tareas y no se
+  atribuye).
+- **Estado en vivo de una respuesta a medias.** 2.1.284 escribe las líneas de una respuesta de
+  subagente mientras se genera: la línea de texto que precede a una herramienta lleva
+  `stop_reason` null (6/6) y la herramienta llega 0,4–1,3 s después; en el hilo principal esa
+  línea ya lleva `tool_use` (159/159). La línea final de texto lleva `end_turn` (47/47); null
+  final solo en versiones ≤ 2.1.268 (44). Sin tratarlo, el panel parpadeaba "idle" a mitad de
+  trabajo (visto en la prueba en vivo). Regla en design.md §7.1; `stop_reason` de una petición =
+  el último no nulo.
+- **Prueba en vivo de F4** (esta sesión, 3 tandas de 2 subagentes, uno con un hijo anidado):
+  árbol correcto (nieto bajo su padre), **ningún salto de huérfano** (contador de inserciones por
+  `agent_id` con MutationObserver: cada agente en una sola posición en 24–32 re-renders), plegar
+  un nodo aguanta 27 ticks SSE sin reabrirse, estados thinking ↔ tool sin "idle" intermedio tras
+  la corrección, y los 10 subagentes acaban en "done".
+- **Coste por nodo = `traza.report`:** copia congelada, 57 sesiones, 150 nodos, 0 diferencias;
+  acumulado de main + huérfanos = total de report en cada sesión (se excluye la copia del par
+  "(fork)": report no conoce dueñas).

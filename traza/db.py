@@ -6,8 +6,8 @@ from pathlib import Path
 from .parser import Request, Tokens
 
 # Subir cualquiera de los dos borra y reconstruye la BD: no hay migraciones (§6.4).
-PARSER_VERSION = "6"
-SCHEMA_VERSION = "4"
+PARSER_VERSION = "10"
+SCHEMA_VERSION = "5"
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
@@ -46,12 +46,14 @@ CREATE TABLE events (
     timestamp TEXT, kind TEXT NOT NULL, tool_name TEXT, tool_use_id TEXT, is_error INTEGER,
     input_hash TEXT, origin TEXT, request_id TEXT,
     denial TEXT,              -- toolDenialKind: la herramienta no se ejecutó (hook, permisos…)
+    agent_ref TEXT, agent_status TEXT,  -- subagente lanzado/notificado y su estado (§7.1)
     UNIQUE (file_path, byte_offset, block)
 );
 CREATE INDEX events_agent ON events (session_id, agent_id, id);
 CREATE INDEX events_tool_use ON events (tool_use_id);
 CREATE INDEX events_uuid ON events (uuid);
 CREATE INDEX events_request ON events (request_id);
+CREATE INDEX events_agent_ref ON events (agent_ref);
 CREATE INDEX request_refs_file ON request_refs (file_path);
 CREATE INDEX request_refs_session ON request_refs (session_id);
 

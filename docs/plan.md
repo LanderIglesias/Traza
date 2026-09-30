@@ -93,7 +93,7 @@ heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `
   versión o reinicio tras borrarla) recibe `reload` por SSE y recarga (test). Nota: en Windows no
   se puede borrar `traza.db` con el servidor abierto (el watcher la tiene abierta).
 
-## F4 — Árbol de agentes, estados y coste por agente (~1 día)
+## F4 — Árbol de agentes, estados y coste por agente (~1 día)  ✅ tests verdes y prueba en vivo, pendiente de revisión
 
 **Hecho cuando:**
 - Una sesión de prueba que lanza 2 subagentes (uno anidado) muestra el árbol correcto en vivo,
@@ -105,7 +105,7 @@ heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `
   `padre_no_encontrado` recientes.
 - Huérfanos con marca distinta según `db.orphans`: `sin_tool_use_id` se muestra como "fork de
   skill" con el principio de su encargo; `padre_no_encontrado` como "padre desconocido".
-- Columna "coste por token de salida" ordenable.
+- Columna "coste por token de salida" ordenable. (En móvil las filas son tarjetas sin cabecera: sin orden por columna.)
 
 ## F5 — Vista de juicio y contenido bajo demanda (~1 día)
 

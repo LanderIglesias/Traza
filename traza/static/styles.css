@@ -188,19 +188,75 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .panel-empty h2 { font-size: 18px; color: var(--ink); font-weight: 800; letter-spacing: -0.02em; }
 .panel-body { padding: 24px 28px; overflow-y: auto; display: flex; flex-direction: column; gap: 22px; }
 .panel-top { display: flex; align-items: flex-start; gap: 16px; justify-content: space-between; }
+.pt-main { min-width: 0; }
 .panel-top h2 { font-size: 22px; font-weight: 800; letter-spacing: -0.03em; text-wrap: balance; }
-.sub { color: var(--ink-2); font-size: 13px; margin-top: 4px; }
-.figure-xl { font-size: 44px; font-weight: 800; letter-spacing: -0.04em; line-height: 1; }
-.p-cost { display: flex; flex-direction: column; gap: 6px; }
-.inherit { font-size: 13px; color: var(--ink-3); }
+.pt-right { display: flex; align-items: center; gap: 12px; flex: none; }
+.pt-cost { font-size: 26px; font-weight: 800; letter-spacing: -0.03em; }
+.sub { color: var(--ink-2); font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
+.inherit { font-size: 13px; color: var(--ink-3); margin-top: -12px; }
+.details summary {
+  cursor: pointer; font-size: 13px; font-weight: 800; color: var(--ink-2); width: fit-content;
+  border-radius: 6px;
+}
+.details[open] summary { margin-bottom: 12px; }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
 .facts div { background: #f5f6f9; border-radius: var(--radius-s); padding: 12px 14px; }
 .facts dt { font-size: 12px; color: var(--ink-2); font-weight: 600; }
 .facts dd { font-weight: 800; margin-top: 2px; }
 .panel-body h3 { font-size: 13px; font-weight: 800; color: var(--ink-2); margin-bottom: -12px; }
+.models { margin-top: 8px; }
 .models li { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .models li:last-child { border-bottom: 0; }
 .models .n { color: var(--ink-2); font-weight: 600; }
+
+/* --- árbol de agentes (F4) ------------------------------------------------------------------ */
+.tree-wrap { overflow-x: auto; margin: 0 -8px; }
+.tree { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.tree th {
+  text-align: left; font-size: 12px; font-weight: 700; color: var(--ink-2); padding: 8px 6px;
+  border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+.tree th button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.tree th[aria-sort] button { color: var(--ink); }
+.tree th[aria-sort="descending"] button::after { content: " ↓"; }
+.tree th[aria-sort="ascending"] button::after { content: " ↑"; }
+.tree td { padding: 9px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.tree .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tree td.num { font-weight: 700; }
+.agent-cell { display: flex; align-items: flex-start; gap: 6px; padding-left: calc(var(--depth, 0) * 20px); min-width: 168px; }
+.agent-name { font-weight: 800; }
+.agent-desc {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+  color: var(--ink-2); font-size: 12.5px; font-weight: 500; max-width: 46ch; overflow-wrap: anywhere;
+}
+.toggle, .toggle-gap { flex: none; width: 22px; height: 22px; }
+.toggle {
+  display: grid; place-items: center; border: 0; border-radius: 6px; background: none; cursor: pointer;
+  color: var(--ink-2);
+}
+.toggle:hover { background: var(--idle-bg); }
+.toggle svg { width: 14px; height: 14px; stroke-width: 2.4; transition: transform 160ms var(--ease); }
+.toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.orphans tr:first-child td { border-top: 8px solid var(--card); }
+.orphan-h td { font-size: 12px; font-weight: 700; color: var(--ink-2); padding-top: 14px; }
+.mark { display: inline-block; margin-right: 6px; padding: 0 7px; border-radius: 999px; font-size: 11.5px; font-weight: 800; }
+.mark[data-kind="sin_tool_use_id"] { background: var(--think-bg); color: var(--think); }
+.mark[data-kind="padre_no_encontrado"] { background: var(--err-bg); color: var(--err); }
+.pill[data-state="done"] { background: #e6f4ec; color: #1b7a45; }
+
+/* móvil: cada agente es una tarjeta (el coste no puede quedar escondido tras un scroll lateral).
+   Sin cabecera no hay orden por columna en móvil. */
+@media (max-width: 640px) {
+  .tree-wrap { margin: 0; }
+  .tree thead { display: none; }
+  .tree tr { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .tree td { padding: 0; border: 0; }
+  .tree td:first-child { flex-basis: 100%; }
+  .tree td.num { text-align: left; }
+  .tree td.num::before { content: attr(data-label); margin-right: 4px; font-weight: 600; color: var(--ink-2); font-size: 12px; }
+  .agent-cell { min-width: 0; padding-left: calc(var(--depth, 0) * 14px); }
+  .orphans tr:first-child td { border-top: 0; }
+}
 
 /* --- salud del parser: franja fija, siempre visible (§7) ------------------------------------ */
 .health {

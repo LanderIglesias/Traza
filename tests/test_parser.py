@@ -1,7 +1,7 @@
 """Casos límite del parser (design.md §6.3)."""
 import json
 
-from traza.parser import Tokens, parse_line, parse_meta, tokens_by_model
+from traza.parser import Tokens, dedupe_requests, parse_line, parse_meta, tokens_by_model
 
 
 def line(**d):
@@ -119,3 +119,75 @@ def test_resultado_denegado_se_distingue_de_un_error_real():
     assert results(toolDenialKind="permission-rule") == [(True, "permission-rule"), (False, None)]
     assert results() == [(True, None), (False, None)]            # error real
     assert results(toolDenialKind={"x": 1}) == [(True, "?"), (False, None)]   # raro: denegado, "?"
+
+
+def test_resultado_de_lanzar_un_subagente_dice_a_quien_y_en_que_estado():
+    # toolUseResult {agentId, status}: "async_launched" = sigue trabajando (segundo plano),
+    # "completed" = primer plano terminado, "forked" = skill fork terminado. findings.md §F4.
+    def ev(content, **extra):
+        return [(e.agent_ref, e.agent_status) for e in parse_line(line(
+            type="user", uuid="u", timestamp="t",
+            message={"role": "user", "content": content}, **extra)).events]
+    one = [{"type": "tool_result", "tool_use_id": "t1", "content": "x"}]
+    assert ev(one, toolUseResult={"agentId": "a1", "status": "async_launched"}) == [
+        ("a1", "async_launched")]
+    assert ev(one, toolUseResult="Error: texto") == [(None, None)]      # a veces es texto
+    two = one + [{"type": "tool_result", "tool_use_id": "t2", "content": "y"}]
+    # toolUseResult es de la línea: con dos resultados no se sabe a cuál se refiere
+    assert ev(two, toolUseResult={"agentId": "a1", "status": "completed"}) == [
+        (None, None), (None, None)]
+
+
+def test_notificacion_de_tarea_dice_que_agente_termino():
+    def ev(text):
+        return [(e.kind, e.origin, e.agent_ref, e.agent_status) for e in parse_line(line(
+            type="user", uuid="u", timestamp="t", origin={"kind": "task-notification"},
+            message={"role": "user", "content": text})).events]
+    n = ("<task-notification>\n<task-id>a97</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n"
+         "<status>completed</status>\n<summary>Agent \"x\" finished</summary>")
+    assert ev(n) == [("prompt", "task-notification", "a97", "completed")]
+    # resumen de varias tareas (sesión anterior): no se atribuye a ninguna
+    many = "<task-notification><task-id>a1</task-id><task-id>a2</task-id><status>stopped</status>"
+    assert ev(many) == [("prompt", "task-notification", None, "stopped")]
+    # un prompt humano que cita esas etiquetas no es una notificación
+    human = parse_line(line(type="user", uuid="u", timestamp="t", origin={"kind": "human"},
+                            message={"role": "user", "content": n})).events[0]
+    assert (human.agent_ref, human.agent_status) == (None, None)
+
+
+def test_output_de_una_peticion_es_el_mayor_visto_no_el_primero():
+    # En disco (374 peticiones): el mismo requestId en varias líneas con output_tokens que CRECE
+    # (8 → 257); input y caché iguales. "Gana la primera" contaba 1.827 tokens en vez de 207.240.
+    def req(out):
+        return parse_line(line(type="assistant", requestId="r", uuid="u", timestamp="t", message={
+            "model": "claude-sonnet-5", "content": [{"type": "text", "text": "x"}],
+            "usage": {"input_tokens": 2, "output_tokens": out, "cache_read_input_tokens": 5,
+                      "cache_creation": {"ephemeral_5m_input_tokens": 1,
+                                         "ephemeral_1h_input_tokens": 0}}})).request
+    assert dedupe_requests([req(8), req(8), req(257)])["r"].tokens == Tokens(2, 257, 5, 1, 0)
+    assert dedupe_requests([req(257), req(8)])["r"].tokens.output == 257   # sin depender del orden
+
+
+def test_stop_reason_de_una_peticion_es_el_ultimo_no_nulo():
+    # Se escribe mientras se genera: thinking (None) → text (None) → tool_use ("tool_use").
+    def req(stop):
+        return parse_line(line(type="assistant", requestId="r", uuid="u", timestamp="t", message={
+            "model": "m", "content": [], "stop_reason": stop})).request
+    assert dedupe_requests([req(None), req("tool_use"), req(None)])["r"].stop_reason == "tool_use"
+
+
+def test_notificacion_encolada_llega_como_attachment():
+    # Si el agente está ocupado cuando termina un subagente, Claude Code (2.1.284) no escribe un
+    # prompt: encola la notificación y la entrega como attachment "queued_command".
+    xml = "<task-notification><task-id>a903</task-id><status>completed</status>"
+    p = parse_line(line(type="attachment", uuid="u", timestamp="t", attachment={
+        "type": "queued_command", "prompt": xml, "commandMode": "task-notification",
+        "origin": {"kind": "task-notification"}}))
+    assert [(e.kind, e.agent_ref, e.agent_status) for e in p.events] == [
+        ("task_notification", "a903", "completed")]
+    assert p.ignored is None
+    # cualquier otro attachment se sigue ignorando (solo se cuenta)
+    other = parse_line(line(type="attachment", uuid="u", timestamp="t",
+                            attachment={"type": "queued_command", "prompt": "hola",
+                                        "commandMode": "prompt"}))
+    assert (other.events, other.ignored) == ([], "attachment")

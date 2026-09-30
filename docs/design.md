@@ -246,7 +246,7 @@ no se guarda (ver "Sesión dueña").
 - **Tokens una vez por petición:** Claude Code parte cada respuesta en varias líneas (una por
   bloque) y **repite el `usage` completo en cada una** [verificado: 1.036 de 1.036 peticiones
   multilínea]. Sumar línea a línea duplica o triplica el coste. Por eso los tokens viven en
-  `requests` (una fila por `requestId`, `INSERT OR IGNORE`, gana la primera línea) y **nunca**
+  `requests` (una fila por `requestId`, upsert: campos de la primera línea salvo `output`, que es el **mayor visto** porque crece entre las líneas de una misma respuesta, findings.md §F4) y **nunca**
   en `events`. El esquema impide reintroducir el bug.
 - `assistant` sin `requestId` (7 en disco) → no crea fila en `requests`, se cuenta como visible.
   Sin `usage` (0 en disco) → tokens `NULL` ("no lo sé"), nunca 0.
@@ -464,9 +464,9 @@ Decisiones de F3 (revisión del brief, 30-09-2026):
 | Estado | Regla | Tipo |
 |---|---|---|
 | Herramienta en vuelo (`tool`) | `tool_use` de su última respuesta sin `tool_result` ni prompt posterior | exacto |
-| Pensando (`thinking`) | última línea deja el turno al modelo (ver §7, reglas con datos) | heurístico |
-| Esperando / inactivo (`idle`) | última línea es texto del modelo, un prompt que no se contesta, o fichero quieto > 10 min | heurístico |
-| Terminado (solo subagentes) | su `toolUseId` aparece como `tool_result` en el padre (F4) | exacto |
+| Pensando (`thinking`) | última línea deja el turno al modelo (ver §7, reglas con datos); **también** texto cuyo `stop_reason` (último no nulo de su petición) es `tool_use`, o es null y su fichero se tocó hace < 30 s: la respuesta aún se está escribiendo (findings.md §F4) | heurístico |
+| Esperando / inactivo (`idle`) | última línea es texto con `end_turn` (u otro fin), o null con el fichero quieto ≥ 30 s (≤ 2.1.268 escribían null al terminar); un prompt que no se contesta; o fichero quieto > 10 min | heurístico |
+| Terminado (`done`, solo subagentes) | algún evento de la sesión lo nombra (`agent_ref`) con estado terminal: `toolUseResult.status` `completed` (primer plano) o `forked` (skill fork), o `<status>` `completed`/`failed`/`stopped` de una `task-notification` (segundo plano). **No** `async_launched`: es el resultado de lanzarlo en segundo plano (66 de 93 subagentes), no de terminar. Manda sobre los demás estados | exacto |
 
 Reglas detalladas y su evidencia: §7, "Sesión viva".
 

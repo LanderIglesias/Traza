@@ -185,3 +185,161 @@ def test_timestamp_sin_zona_no_tumba_el_panel(conn):
     today = views.overview(conn, now=same_day)["today"]
     # sin zona = UTC (los JSONL escriben UTC); ilegible = no se cuenta como de hoy
     assert today["cost"] == pytest.approx(0.001223 - 0.000702)
+
+
+# --- F4: árbol de agentes ----------------------------------------------------------------------
+
+def _copy(tmp_path, edit=None):
+    """Copia de la fixture, `edit(ruta_raíz_de_sess-A)` para variarla, y la caché ya escaneada."""
+    root = tmp_path / "projects"
+    shutil.copytree(FIX, root / "proj")
+    if edit:
+        edit(root / "proj")
+    for f in root.rglob("*.jsonl"):
+        os.utime(f)
+    c = db.connect(tmp_path / "traza.db")
+    scan(c, root)
+    return c
+
+
+def _nodes(conn, sid="sess-A"):
+    return {n["id"]: n for n in views.agent_tree(conn, sid, now=time.time())}
+
+
+def _append(path, obj):
+    import json
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(obj) + "\n")
+
+
+def test_arbol_de_la_fixture(conn):
+    n = _nodes(conn)
+    assert set(n) == {"main", "abc"}
+    assert (n["main"]["parent"], n["main"]["orphan"]) == (None, None)
+    assert (n["abc"]["parent"], n["abc"]["orphan"], n["abc"]["type"], n["abc"]["description"]) == (
+        "main", None, "Explore", "Buscar x")
+    # abc se lanzó en segundo plano: su tool_result ("async_launched") NO es que haya terminado
+    assert (n["main"]["state"], n["abc"]["state"]) == ("idle", "tool")
+    assert (n["main"]["errors"], n["main"]["blocked"], n["abc"]["errors"]) == (1, 1, 0)
+    assert n["abc"]["output"] == 7 and n["abc"]["requests"] == 1
+
+
+def test_coste_propio_y_acumulado_cuadran_con_report(conn):
+    # traza.report lee los ficheros directamente (camino independiente de la caché)
+    from traza.pricing import request_cost
+    from traza.report import session_agents
+    rep = {aid: views._money([request_cost(r) for r in reqs.values()])
+           for aid, _, reqs in session_agents(FIX / "sess-A.jsonl")}
+    n = _nodes(conn)
+    for aid in ("main", "abc"):
+        assert n[aid]["cost"] == pytest.approx(rep[aid]["cost"]) and n[aid]["unpriced"] == 0
+    assert n["abc"]["total"]["cost"] == pytest.approx(rep["abc"]["cost"])
+    assert n["main"]["total"]["cost"] == pytest.approx(rep["main"]["cost"] + rep["abc"]["cost"])
+    # y el árbol entero es el coste de la sesión (no es una copia: no hereda nada)
+    a = next(s for s in views.overview(conn, now=time.time())["sessions"] if s["id"] == "sess-A")
+    assert n["main"]["total"]["cost"] == pytest.approx(a["cost"])
+
+
+def test_subagente_terminado_por_notificacion(tmp_path):
+    def done(proj):
+        _append(proj / "sess-A.jsonl", {
+            "type": "user", "uuid": "u9", "timestamp": "2026-01-01T10:00:30.000Z",
+            "origin": {"kind": "task-notification"},
+            "message": {"role": "user", "content":
+                        "<task-notification><task-id>abc</task-id><status>completed</status>"}})
+    n = _nodes(_copy(tmp_path, done))
+    # terminado aunque su último Grep no tenga resultado; y deja de contar como trabajando
+    assert n["abc"]["state"] == "done"
+    assert views.session_state(["done", "idle"], idle_for_s=5) == "idle"
+
+
+def _with_task(proj, meta):
+    """abc con ese meta.json y un primer prompt (su encargo) delante de su línea."""
+    import json
+    sub = proj / "sess-A" / "subagents"
+    (sub / "agent-abc.meta.json").write_text(meta)
+    body = (sub / "agent-abc.jsonl").read_text(encoding="utf-8")
+    prompt = {"type": "user", "uuid": "p0", "timestamp": "2026-01-01T10:00:14.000Z",
+              "isMeta": True, "message": {"role": "user", "content": [
+                  {"type": "text", "text": "  Review target: los cambios de F3 " + "x" * 300}]}}
+    (sub / "agent-abc.jsonl").write_text(json.dumps(prompt) + "\n" + body, encoding="utf-8")
+
+
+def test_huerfano_skill_fork_muestra_el_principio_del_encargo(tmp_path):
+    fork = lambda proj: _with_task(proj, '{"agentType": "general-purpose", "spawnDepth": 1}')
+    n = _nodes(_copy(tmp_path, fork))
+    assert (n["abc"]["parent"], n["abc"]["orphan"]) == (None, "sin_tool_use_id")
+    assert n["abc"]["task"].startswith("Review target: los cambios de F3")
+    assert len(n["abc"]["task"]) <= 160
+
+
+def test_huerfano_con_padre_desconocido_no_es_skill_fork(tmp_path):
+    # toolUseId presente pero ese tool_use no está en la sesión: "padre desconocido", nunca
+    # la etiqueta (ni el texto) de skill fork
+    # con encargo en su JSONL: si la regla mirase solo "es huérfano", aquí saldría el texto
+    lost = lambda proj: _with_task(
+        proj, '{"agentType": "Explore", "toolUseId": "toolu_no_esta", "spawnDepth": 1}')
+    n = _nodes(_copy(tmp_path, lost))
+    assert (n["abc"]["parent"], n["abc"]["orphan"], n["abc"]["task"]) == (
+        None, "padre_no_encontrado", None)
+
+
+def test_subagente_anidado_y_acumulado(tmp_path):
+    # def lo lanzó abc con su tool_use toolu_s1; el acumulado de main incluye a los dos
+    def nested(proj):
+        sub = proj / "sess-A" / "subagents"
+        (sub / "agent-def.meta.json").write_text(
+            '{"agentType": "Plan", "toolUseId": "toolu_s1", "spawnDepth": 2}')
+        _append(sub / "agent-def.jsonl", {
+            "type": "assistant", "uuid": "d1", "timestamp": "2026-01-01T10:00:16.000Z",
+            "requestId": "req_d1", "message": {"model": "claude-sonnet-5", "content": [
+                {"type": "text", "text": "hecho"}], "stop_reason": "end_turn", "usage": {
+                    "input_tokens": 10, "output_tokens": 100, "cache_read_input_tokens": 0,
+                    "cache_creation": {"ephemeral_5m_input_tokens": 0,
+                                       "ephemeral_1h_input_tokens": 0}}}})
+    n = _nodes(_copy(tmp_path, nested))
+    assert (n["def"]["parent"], n["abc"]["parent"]) == ("abc", "main")
+    assert n["abc"]["total"]["cost"] == pytest.approx(n["abc"]["cost"] + n["def"]["cost"])
+    assert n["main"]["total"]["cost"] == pytest.approx(
+        n["main"]["cost"] + n["abc"]["cost"] + n["def"]["cost"])
+    assert n["def"]["state"] == "idle"          # terminó con texto y end_turn
+
+
+def test_arbol_de_sesion_inexistente(conn):
+    assert views.agent_tree(conn, "no-existe") == []
+
+
+@pytest.mark.parametrize("stop_reason, quiet_s, expected", [
+    # 2.1.284: el hilo principal escribe "tool_use" en la línea de texto que precede a una
+    # herramienta (159/159); los subagentes escriben la respuesta mientras se genera y esa línea
+    # lleva None (6/6). La línea FINAL de texto lleva end_turn (47/47). findings.md §F4.
+    ("tool_use", 0, "thinking"),
+    ("end_turn", 0, "idle"),
+    (None, 2, "thinking"),       # respuesta a medias: la herramienta aún no se ha escrito
+    # None final solo en versiones ≤ 2.1.268 (44 casos): se ve "idle" con 30 s de retraso
+    (None, 31, "idle"),
+])
+def test_texto_sin_fin_de_turno_explicito(stop_reason, quiet_s, expected):
+    assert views.agent_state("text", False, None, stop_reason, quiet_s) == expected
+
+
+def test_subagente_de_primer_plano_termina_con_su_resultado(tmp_path):
+    # Primer plano: el tool_result del padre llega cuando termina, sin toolUseResult (así lo
+    # escribe 2.1.284 dentro de un subagente). Solo "async_launched" NO es terminar.
+    def foreground(proj):
+        f = proj / "sess-A.jsonl"
+        f.write_text(f.read_text(encoding="utf-8").replace(
+            '"toolUseResult":{"isAsync":true,"status":"async_launched","agentId":"abc","description":"Buscar x"},', ""),
+            encoding="utf-8")
+    assert _nodes(_copy(tmp_path, foreground))["abc"]["state"] == "done"
+
+
+def test_notificacion_encolada_termina_al_subagente_sin_cambiar_el_turno(tmp_path):
+    def queued(proj):
+        _append(proj / "sess-A.jsonl", {
+            "type": "attachment", "uuid": "q1", "timestamp": "2026-01-01T10:00:30.000Z",
+            "attachment": {"type": "queued_command", "commandMode": "task-notification",
+                           "prompt": "<task-notification><task-id>abc</task-id><status>completed</status>"}})
+    n = _nodes(_copy(tmp_path, queued))
+    assert n["abc"]["state"] == "done"
+    assert n["main"]["state"] == "idle"   # la notificación no es "la última línea" de main
