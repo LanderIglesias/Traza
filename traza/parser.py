@@ -73,28 +73,35 @@ def input_hash(obj) -> str:
 
 
 def parse_line(line: str) -> Parsed:
+    """Nunca lanza: una línea que no se entiende es un evento `unknown` visible, no un crash del
+    watcher. Recibe solo líneas completas (terminadas en \n): una a medias también daría unknown."""
     try:
-        d = json.loads(line)
-    except ValueError:
-        return Parsed(events=[Event("unknown", 0, None, None)])
-    if not isinstance(d, dict):
+        return _parse(json.loads(line))
+    except Exception:  # JSON roto, forma inesperada, anidamiento absurdo (RecursionError)…
         return Parsed(events=[Event("unknown", 0, None, None)])
 
+
+def _parse(d) -> Parsed:
+    if not isinstance(d, dict):
+        raise TypeError("la línea no es un objeto")
     t, uuid, ts = d.get("type"), d.get("uuid"), d.get("timestamp")
     if t in IGNORED_TYPES:
         return Parsed(ignored=t)
-    if t == "ai-title":
-        return Parsed(title=d.get("aiTitle"))
-    if t == "custom-title":
-        return Parsed(title=d.get("customTitle"))
+    if t in ("ai-title", "custom-title"):
+        title = d.get("aiTitle" if t == "ai-title" else "customTitle")
+        if not isinstance(title, str):
+            raise TypeError("título sin texto")
+        return Parsed(title=title)
     if t == "system":
         sub = d.get("subtype")
         if sub in SHOWN_SYSTEM_SUBTYPES:
             return Parsed(events=[Event(sub, 0, uuid, ts)])
         return Parsed(ignored=f"system:{sub}")
 
-    msg = d.get("message") if isinstance(d.get("message"), dict) else {}
-    content = msg.get("content")
+    msg = d.get("message")
+    if t in ("user", "assistant") and not isinstance(msg, dict):
+        raise TypeError("user/assistant sin message")
+    content = msg.get("content") if isinstance(msg, dict) else None
     if t == "user":
         results = [(i, b) for i, b in enumerate(content)
                    if isinstance(b, dict) and b.get("type") == "tool_result"] \
@@ -108,8 +115,10 @@ def parse_line(line: str) -> Parsed:
                   is_error=bool(b.get("is_error"))) for i, b in results])
     if t == "assistant":
         rid = d.get("requestId")
+        if not isinstance(content, list) or not isinstance(rid, (str, type(None))):
+            raise TypeError("assistant con content o requestId de forma inesperada")
         events = []
-        for i, b in enumerate(content if isinstance(content, list) else []):
+        for i, b in enumerate(content):
             bt = b.get("type") if isinstance(b, dict) else None  # bloque raro → unknown
             if bt == "thinking":
                 continue  # texto vacío en disco: no hay nada que mostrar

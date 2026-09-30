@@ -65,3 +65,24 @@ def test_bloque_que_no_es_objeto_no_rompe_el_parser():
     a = parse_line(line(type="assistant", uuid="u", timestamp="t", message={"content": [7]}))
     assert [e.kind for e in u.events] == ["prompt"]
     assert [(e.kind, e.block) for e in a.events] == [("unknown", 0)]
+
+
+def test_json_valido_con_forma_rara_es_unknown_nunca_excepcion():
+    raras = [
+        '{"type": []}',
+        '{"type": "system", "subtype": {}}',
+        line(type="assistant", requestId="r", message={"content": [], "usage": {"cache_creation": 5}}),
+        line(type="assistant", requestId="r", message={"content": [], "usage": {"server_tool_use": 1}}),
+        line(type="assistant", requestId=["r"], message={"content": []}),
+        "[" * 100_000 + "]" * 100_000,
+    ]
+    for raw in raras:
+        p = parse_line(raw)
+        assert [e.kind for e in p.events] == ["unknown"] and p.request is None, raw[:60]
+
+
+def test_lineas_sin_lo_esencial_son_unknown_no_desaparecen():
+    for raw in [line(type="user", uuid="u"),                       # user sin message
+                line(type="assistant", uuid="u", message={"content": "texto"}),
+                line(type="ai-title"), line(type="custom-title", customTitle=3)]:
+        assert [e.kind for e in parse_line(raw).events] == ["unknown"], raw
