@@ -38,11 +38,22 @@ def session_state(agent_states, idle_for_s: float) -> str:
 
 
 def _parse_ts(ts: str | None) -> datetime | None:
-    """Timestamp ISO-8601 del JSONL ("…Z") a datetime con zona; None si falta o no se entiende."""
+    """Timestamp ISO-8601 del JSONL ("…Z") a datetime con zona; None si falta o no se entiende.
+    Sin zona se toma como UTC (los JSONL escriben UTC): comparar uno sin zona con uno con zona
+    lanzaría TypeError y tumbaría /api/overview entero."""
     try:
-        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
     except (AttributeError, ValueError):
         return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _local_midnight(now: float, tz=None) -> datetime:
+    """Medianoche local del día de `now`, con el desfase de ESA hora (no el de ahora): en un día
+    de cambio de hora, medianoche y mediodía tienen desfases distintos."""
+    if tz is not None:
+        return datetime.fromtimestamp(now, tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    return datetime.fromtimestamp(now).replace(hour=0, minute=0, second=0, microsecond=0).astimezone()
 
 
 def _iso(mtime_ns: int) -> str:
@@ -140,8 +151,7 @@ def overview(conn, now: float | None = None) -> dict:
             active_agents += sum(st != "idle" for st in states.get(sid, []))
 
     # "Cost today": peticiones desde la medianoche LOCAL de `now` (cada una una vez, como la ventana)
-    midnight = datetime.fromtimestamp(now).astimezone().replace(
-        hour=0, minute=0, second=0, microsecond=0)
+    midnight = _local_midnight(now)
     today = {"cost": 0, "unpriced": 0}
     for r in reqs:
         ts = _parse_ts(r.timestamp)

@@ -130,3 +130,23 @@ def test_coste_de_hoy_en_hora_local(conn):
         "cost": pytest.approx(0.001223), "unpriced": 0}
     next_day = same_day + 86400
     assert views.overview(conn, now=next_day)["today"] == {"cost": 0, "unpriced": 0}
+
+
+def test_medianoche_local_en_dia_de_cambio_de_hora():
+    # 25-10-2026 Madrid: a las 03:00 se vuelve a +01:00, pero la medianoche aún era +02:00.
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    madrid = ZoneInfo("Europe/Madrid")
+    noon = datetime(2026, 10, 25, 12, 0, tzinfo=madrid).timestamp()
+    assert views._local_midnight(noon, madrid) == datetime(2026, 10, 24, 22, 0, tzinfo=timezone.utc)
+
+
+def test_timestamp_sin_zona_no_tumba_el_panel(conn):
+    # El parser guarda el texto del JSONL tal cual; uno sin zona no puede dar un 500.
+    conn.execute("UPDATE requests SET timestamp = '2026-01-01T10:00:02' WHERE request_id = 'req_1'")
+    conn.execute("UPDATE requests SET timestamp = 'basura' WHERE request_id = 'req_2'")
+    from datetime import datetime, timezone
+    same_day = datetime(2026, 1, 1, 10, 30, tzinfo=timezone.utc).timestamp()
+    today = views.overview(conn, now=same_day)["today"]
+    # sin zona = UTC (los JSONL escriben UTC); ilegible = no se cuenta como de hoy
+    assert today["cost"] == pytest.approx(0.001223 - 0.000702)
