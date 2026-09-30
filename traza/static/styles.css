@@ -177,6 +177,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   background: var(--err-bg); color: var(--err); font-size: 11.5px; font-weight: 800; flex: none;
 }
 .badge svg { width: 12px; height: 12px; stroke-width: 2.4; }
+.badge-muted { background: var(--idle-bg); color: var(--idle); font-weight: 700; padding-left: 7px; }
 
 /* --- panel de trabajo ----------------------------------------------------------------------- */
 .panel-empty {

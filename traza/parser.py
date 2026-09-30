@@ -48,6 +48,7 @@ class Event:
     is_error: bool | None = None
     input_hash: str | None = None
     origin: str | None = None   # solo prompt: "human", "task-notification", "meta" (inyectado)…
+    denial: str | None = None   # solo tool_result con error: toolDenialKind (no se ejecutó)
 
 
 @dataclass
@@ -155,9 +156,12 @@ def _parse(d) -> Parsed:
         if not results:  # prompt: un evento por línea; el contenido completo se lee bajo demanda
             origin = _prompt_origin(d, content)
             return Parsed(events=[Event("prompt", 0, uuid, ts, origin=origin)])
+        # toolDenialKind es de la línea, pero solo describe a los resultados con error
+        denial = _modifier(d.get("toolDenialKind"))
         return Parsed(events=[
             Event("tool_result", i, uuid, ts, tool_use_id=_str(b.get("tool_use_id")),
-                  is_error=bool(b.get("is_error"))) for i, b in results])
+                  is_error=bool(b.get("is_error")),
+                  denial=denial if b.get("is_error") else None) for i, b in results])
     if t == "assistant":
         rid = d.get("requestId")
         if not isinstance(content, list) or not isinstance(rid, (str, type(None))):

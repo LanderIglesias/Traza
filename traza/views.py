@@ -56,6 +56,14 @@ def _local_midnight(now: float, tz=None) -> datetime:
     return datetime.fromtimestamp(now).replace(hour=0, minute=0, second=0, microsecond=0).astimezone()
 
 
+def _money(costs) -> dict:
+    """Suma de costes (None = sin precio) con los tres casos de §6.6: todo con precio → cost;
+    parte → cost + unpriced ("$X+"); nada con precio → cost None ("?"), nunca un 0 engañoso."""
+    priced = [c for c in costs if c is not None]
+    unpriced = len(costs) - len(priced)
+    return {"cost": None if unpriced and not priced else sum(priced), "unpriced": unpriced}
+
+
 def _iso(mtime_ns: int) -> str:
     return datetime.fromtimestamp(mtime_ns / 1e9, timezone.utc).isoformat(timespec="seconds")
 
@@ -68,8 +76,12 @@ def overview(conn, now: float | None = None) -> dict:
                     "SELECT session_id, project, title FROM sessions")}
     agents = dict(conn.execute("SELECT session_id, COUNT(*) FROM agents GROUP BY session_id"))
     mtimes = dict(conn.execute("SELECT session_id, MAX(mtime_ns) FROM files GROUP BY session_id"))
-    errors = dict(conn.execute("""SELECT session_id, SUM(kind = 'api_error' OR is_error = 1)
-                                  FROM events GROUP BY session_id"""))
+    # errores reales vs bloqueos (la herramienta no llegó a ejecutarse: hook, permisos…)
+    errors = {sid: (e, b) for sid, e, b in conn.execute("""
+        SELECT session_id,
+               COALESCE(SUM(kind = 'api_error' OR (is_error = 1 AND denial IS NULL)), 0),
+               COALESCE(SUM(is_error = 1 AND denial IS NOT NULL), 0)
+        FROM events GROUP BY session_id""")}
     # Herramienta en vuelo (§7.1): pedida en la ÚLTIMA respuesta del agente, sin resultado y sin
     # prompt posterior. Las de respuestas anteriores ya acabaron o se abandonaron (el modelo no
     # vuelve a responder hasta tener sus resultados); contarlas dejaría una sesión en "tool"
@@ -112,32 +124,25 @@ def overview(conn, now: float | None = None) -> dict:
     owner = db.owners(conn)
     reqs = db.requests(conn)
     cost = {r.request_id: request_cost(r) for r in reqs}
-    for s in sessions.values():
-        s.update(cost=0.0, unpriced=0, inherits=[])
+    own = defaultdict(list)
     for rid, c in cost.items():
-        s = sessions.get(owner.get(rid))
-        if s is not None:
-            if c is None:
-                s["unpriced"] += 1
-            else:
-                s["cost"] += c
-    inherited = defaultdict(lambda: defaultdict(lambda: [0, 0.0]))
+        own[owner.get(rid)].append(c)
+    inherited = defaultdict(lambda: defaultdict(list))
     for sid, rid in conn.execute("SELECT DISTINCT session_id, request_id FROM request_refs"):
-        own = owner.get(rid)
-        if own is not None and own != sid:
-            acc = inherited[sid][own]
-            acc[0] += 1
-            acc[1] += cost.get(rid) or 0.0
+        o = owner.get(rid)
+        if o is not None and o != sid:
+            inherited[sid][o].append(cost.get(rid))
     live_sessions = active_agents = 0
     for sid, s in sessions.items():
         idle_for = now - mtimes.get(sid, 0) / 1e9
         s["state"] = session_state(states.get(sid, []), idle_for)
         s["live"] = s["state"] != "idle"
         s["agents"] = agents.get(sid, 0)
-        s["errors"] = errors.get(sid) or 0
+        s["errors"], s["blocked"] = errors.get(sid, (0, 0))
         s["last_activity"] = _iso(mtimes.get(sid, 0))
-        s["inherits"] = [{"from": o, "requests": n, "cost": c}
-                         for o, (n, c) in sorted(inherited[sid].items())]
+        s.update(_money(own[sid]))
+        s["inherits"] = [{"from": o, "requests": len(cs), **_money(cs)}
+                         for o, cs in sorted(inherited[sid].items())]
         running = [(ts or "", aid, tool) for (s_id, aid), (tool, ts) in in_flight.items()
                    if s_id == sid and agent_st.get((s_id, aid)) == "tool"]
         if s["state"] == "tool" and running:
@@ -152,21 +157,13 @@ def overview(conn, now: float | None = None) -> dict:
 
     # "Cost today": peticiones desde la medianoche LOCAL de `now` (cada una una vez, como la ventana)
     midnight = _local_midnight(now)
-    today = {"cost": 0, "unpriced": 0}
-    for r in reqs:
-        ts = _parse_ts(r.timestamp)
-        if ts is not None and ts >= midnight:
-            c = cost[r.request_id]
-            if c is None:
-                today["unpriced"] += 1
-            else:
-                today["cost"] += c
+    today = _money([cost[r.request_id] for r in reqs
+                    if (ts := _parse_ts(r.timestamp)) is not None and ts >= midnight])
 
     ignored = db.ignored_counts(conn)
-    priced = [c for c in cost.values() if c is not None]
     return {
         "generation": db.generation(conn),
-        "window": {"cost": sum(priced), "unpriced": len(cost) - len(priced)},
+        "window": _money(list(cost.values())),
         "today": today,
         "counts": {"live_sessions": live_sessions, "active_agents": active_agents,
                    "sessions": len(sessions)},

@@ -176,7 +176,7 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
 - **Los errores de herramienta son sobre todo bloqueos de hooks:** de 892 `tool_result` con
   `is_error`, 515 (58 %) son hooks que bloquean (GateGuard y similares), 157 `Exit code`, 4
   rechazos del usuario, 216 otros. El badge de F3 los cuenta todos y lo dice en su tooltip;
-  separarlos es trabajo de F6 (señales).
+  separados en F4 (ver §F4).
 - **Título "(fork)":** `7bc000bb`, a la que la regla de dueña (empezó antes) asigna las 1.274
   peticiones compartidas, lleva un `custom-title` "…(fork)" que aparece en su línea 10.317, no
   al principio. **Sin determinar** si Claude Code etiqueta así la sesión nueva o la de origen;
@@ -195,3 +195,21 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
   etiqueta `<command-name>` en medio de un prompt humano lo reclasificaba como comando local
   (1 caso en disco). Indicador de conexión probado en Chrome: verde → ámbar (~3 s) → rojo
   (+10 s) → verde (~2,5 s tras volver el servidor, sin recargar).
+
+## F4 — Árbol de agentes (30-09-2026)
+
+- **Bloqueo vs error real: `toolDenialKind`.** Sobre una copia congelada (922 `tool_result` con
+  `is_error`): el campo de línea `toolDenialKind` aparece **solo** en resultados con error y dice
+  que la herramienta no se ejecutó: `permission-rule` 669 (462 hooks con prefijo
+  `PreToolUse:<Tool> hook error:`, 205 hooks **sin** prefijo, 2 reglas internas),
+  `automode-blocked` 6, `automode-unavailable` 7, `user-rejected` 2. Sin él (238): `Exit code`,
+  timeouts, `<tool_use_error>` — fallos reales. El prefijo de hook solo existe desde 2.1.278
+  (antes el texto del hook va tal cual), así que clasificar por texto habría exigido reconocer
+  el mensaje de cada plugin; `toolDenialKind` (visto desde 2.1.259) no. Anteriores a 2.1.259: sin
+  campo; en disco no hay bloqueos de hook en esas versiones.
+- **Primera reconstrucción real por cambio de esquema** (parser 5→6, esquema 3→4, columna
+  `events.denial`): misma copia congelada, antes y después, **idénticos** en ficheros, sesiones,
+  agentes, peticiones, refs, eventos por tipo, tokens, coste ($981,05), dueñas, errores por
+  sesión e ignorados. Build completo 1,91 s → 1,90 s. Navegador con el servidor viejo abierto →
+  servidor nuevo sobre la misma caché: la reconstruye (generación nueva) y la pestaña recarga
+  sola (`navigation.type = "reload"`).

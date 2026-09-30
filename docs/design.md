@@ -186,7 +186,7 @@ se reconecta solo.
 | `requests` | `request_id` | hora, modelo, `input`, `output`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `speed`, `inference_geo`, `web_search_requests`, `stop_reason` |
 | `request_refs` | `(request_id, file_path)` | `session_id`, `agent_id`: qué ficheros contienen líneas de cada petición (también las que solo tienen `thinking` y no crean evento) |
 | `ignored` | `(file_path, type)` | `n`: contador de líneas ignoradas por tipo, para la barra de salud |
-| `events` | `id INTEGER PRIMARY KEY AUTOINCREMENT` | `(file_path, byte_offset, block)` UNIQUE, `uuid` (solo verificación), `session_id`, `agent_id`, hora, `kind`, `tool_name`, `tool_use_id`, `is_error`, `input_hash`, `origin`, `request_id`, `file_path`, `byte_offset`, `length` |
+| `events` | `id INTEGER PRIMARY KEY AUTOINCREMENT` | `(file_path, byte_offset, block)` UNIQUE, `uuid` (solo verificación), `session_id`, `agent_id`, hora, `kind`, `tool_name`, `tool_use_id`, `is_error`, `denial`, `input_hash`, `origin`, `request_id`, `file_path`, `byte_offset`, `length` |
 
 Índices: `events(agent_id, id)`, `events(tool_use_id)`, `events(uuid)`, `events(request_id)`,
 `events(file_path)`, `request_refs(file_path)`, `request_refs(session_id)`.
@@ -269,7 +269,7 @@ no se guarda (ver "Sesión dueña").
 | Origen en el JSONL | `kind` |
 |---|---|
 | `user` sin ningún bloque `tool_result` (texto, o texto + imagen/documento) | `prompt`, **un evento por línea** (`block = 0`) + `origin` |
-| `user`, bloque `tool_result` | `tool_result` (+ `is_error`, `tool_use_id`) |
+| `user`, bloque `tool_result` | `tool_result` (+ `is_error`, `tool_use_id`; si hay error, `denial` = `toolDenialKind` de la línea: la herramienta **no se ejecutó**) |
 | `assistant`, bloque `text` | `text` |
 | `assistant`, bloque `tool_use` | `tool_use` (+ `tool_name`, `tool_use_id`, `input_hash`) |
 | `assistant`, bloque `thinking` | no crea evento (texto vacío en disco) |
@@ -342,7 +342,8 @@ disponible"**, un único estado de error.
 - Clave de precio: modelo tras **quitar solo el sufijo de fecha** (`claude-haiku-4-5-20251001`
   → `claude-haiku-4-5`). Nada más se fusiona: `claude-opus-5` y `claude-opus-5-5` son modelos
   distintos.
-- Modelo sin precio → `?`, nunca 0.
+- Modelo sin precio → `?`, nunca 0. Vale para **toda suma** (ventana, hoy, sesión, herencia), con
+  tres casos: todo con precio `$X`; parte `$X+` (y cuántas faltan); nada con precio `?`.
 - **Supuestos** (no verificados, marcados en el código): `speed` ausente (1.712 líneas de
   versiones antiguas) = precio estándar; `inference_geo` ausente (solo las 18 `<synthetic>`) = ×1;
   el ×1,1 de `inference_geo = "us"` no se aplica a las búsquedas web (0 búsquedas en disco).
@@ -478,7 +479,8 @@ Los umbrales viven en un solo bloque de constantes.
 
 | Señal | Regla | Muestra alerta |
 |---|---|---|
-| Error de herramienta | `tool_result.is_error` | sí |
+| Error de herramienta | `tool_result.is_error` **sin** `denial` (se ejecutó y falló) | sí |
+| Bloqueo | `tool_result.is_error` **con** `denial` (hook, regla de permisos, usuario, auto mode): no se ejecutó; se cuenta aparte, no es un fallo | sí |
 | `api_error` / compactación | subtipos de `system` | sí |
 | Bucle | mismo agente, misma herramienta, mismo hash de JSON canónico (claves ordenadas, sin espacios) ≥ 3 veces, **sin error intermedio** | sí |
 | Reintento que también falló | error → misma herramienta → error | sí |

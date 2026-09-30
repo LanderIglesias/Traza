@@ -7,7 +7,9 @@ const STATE_LABEL = { tool: "Running tool", thinking: "Thinking", idle: "Idle" }
 const ui = { data: null, filter: "all", selected: null };
 
 // --- formato ---------------------------------------------------------------------------------
+// Tres casos (§6.6): todo con precio "$X", parte "$X+", nada con precio "?" (v === null)
 function money(v, unpriced = 0) {
+  if (v === null) return "?";
   const plus = unpriced ? "+" : "";
   if (v === 0 && !unpriced) return "$0.00";
   if (v > 0 && v < 0.01) return `<$0.01${plus}`;
@@ -108,15 +110,18 @@ function renderRows(d) {
     const btn = el("button", { type: "button", className: "row", "data-id": s.id, "aria-current": String(s.id === ui.selected) },
       el("span", { className: "row-title" },
         el("span", { className: "t", text: titleOf(s) }),
-        s.errors ? el("span", { className: "badge", title: `${s.errors} results marked as error (hook blocks included) or API errors` },
-          icon(ALERT), el("span", { text: String(s.errors) })) : null),
+        s.errors ? el("span", { className: "badge", title: `${s.errors} tool results that failed, or API errors` },
+          icon(ALERT), el("span", { text: String(s.errors) })) : null,
+        // la herramienta no llegó a ejecutarse (hook, regla de permisos, usuario): no es un fallo
+        s.blocked ? el("span", { className: "badge badge-muted", title: `${s.blocked} tool calls blocked before running (hooks, permission rules, user)`,
+          text: `${s.blocked} blocked` }) : null),
       el("span", { className: "row-sub", text: `${s.project} · ${shortId(s.id)}` }),
       el("span", { className: "row-right" },
         el("span", { className: "row-cost", text: money(s.cost, s.unpriced) }),
         el("span", { className: "row-meta" }, pill(s.state), el("span", { text: ago(s.last_activity) }))),
       ...s.inherits.map((i) => el("span", {
         className: "inherit-line",
-        text: `inherits ${i.requests.toLocaleString("en-US")} requests from ${shortId(i.from)} (+${money(i.cost)})`,
+        text: `inherits ${i.requests.toLocaleString("en-US")} requests from ${shortId(i.from)} (+${money(i.cost, i.unpriced)})`,
       })));
     btn.addEventListener("click", () => select(s.id));
     return el("li", {}, btn);
@@ -155,7 +160,7 @@ async function renderPanel() {
   const inh = $("p-inherit");
   inh.hidden = !s.inherits.length;
   inh.textContent = s.inherits.map((i) =>
-    `Also contains ${i.requests.toLocaleString("en-US")} requests owned by ${shortId(i.from)} (+${money(i.cost)}), not counted here`).join(" · ");
+    `Also contains ${i.requests.toLocaleString("en-US")} requests owned by ${shortId(i.from)} (+${money(i.cost, i.unpriced)}), not counted here`).join(" · ");
   $("p-started").textContent = s.started ? new Date(s.started).toLocaleString() : "?";
   $("p-last").textContent = ago(s.last_activity);
   $("p-requests").textContent = s.requests.toLocaleString("en-US");

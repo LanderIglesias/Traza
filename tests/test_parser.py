@@ -105,3 +105,17 @@ def test_command_name_solo_cuenta_al_principio():
     p = parse_line(line(type="user", uuid="u", timestamp="t", origin={"kind": "human"},
                         message={"role": "user", "content": "mira esto: <command-name>/x</command-name>"}))
     assert p.events[0].origin == "human"
+
+
+def test_resultado_denegado_se_distingue_de_un_error_real():
+    # toolDenialKind (en disco desde 2.1.259) = la herramienta NO se ejecutó: hook que bloquea
+    # (con o sin prefijo "PreToolUse:… hook error:"), regla de permisos, usuario, auto mode.
+    # Sin él, is_error = la herramienta se ejecutó y falló. findings.md §F4.
+    def results(**extra):
+        return [(e.is_error, e.denial) for e in parse_line(line(
+            type="user", uuid="u", timestamp="t", message={"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "a", "is_error": True, "content": "no"},
+                {"type": "tool_result", "tool_use_id": "b", "content": "ok"}]}, **extra)).events]
+    assert results(toolDenialKind="permission-rule") == [(True, "permission-rule"), (False, None)]
+    assert results() == [(True, None), (False, None)]            # error real
+    assert results(toolDenialKind={"x": 1}) == [(True, "?"), (False, None)]   # raro: denegado, "?"
