@@ -41,5 +41,8 @@ def test_modificadores():
     assert request_cost(req("claude-opus-5-5", base, speed="fast")) == pytest.approx(8 + 40)
     assert request_cost(req("claude-opus-5-5", base, geo="us")) == pytest.approx((4 + 20) * 1.1)
     assert request_cost(req("claude-opus-5-5", base, web=3)) == pytest.approx(4 + 20 + 0.03)
+    # decisión fijada (sin verificar en la web oficial): el ×1,1 no toca las búsquedas web
+    assert request_cost(req("claude-opus-5-5", base, geo="us", web=1)) == pytest.approx(
+        (4 + 20) * 1.1 + 0.01)
     # speed ausente (versiones antiguas) = estándar
     assert request_cost(req("claude-opus-5-5", base, speed=None)) == pytest.approx(4 + 20)

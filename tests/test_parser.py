@@ -36,7 +36,11 @@ def test_prompt_guarda_su_origen():
     assert origin(origin={"kind": "task-notification"}) == "task-notification"
     assert origin(isMeta=True) == "meta"            # texto que inyecta Claude Code
     assert origin(isMeta=True, origin={"kind": "peer"}) == "meta"
-    assert origin() is None                          # p. ej. el encargo de un subagente
+    assert origin(origin={"kind": "peer"}) == "peer"
+    # Sin origin ni isMeta → NULL. En disco: encargo de subagente, prompt del SDK,
+    # "[Request interrupted by user]" o resumen de compactación. Ninguno es "human".
+    assert origin() is None
+    assert origin(promptSource="sdk") is None
 
 
 def test_custom_title():

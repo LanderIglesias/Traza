@@ -231,11 +231,17 @@ En disco, los `tool_result` en paralelo llegan hoy en líneas separadas y solo 5
 `assistant` tienen más de un bloque [verificado]; el parser admite ambos casos igualmente.
 Un bloque de `assistant` de tipo no conocido → evento `unknown` en su `block`.
 
-**`origin` de un `prompt`** [verificado en F1]: no todo `prompt` lo escribió el usuario. De 771
-líneas, ~385 son `origin.kind = "human"`, 94 `task-notification`, 135 `isMeta` (texto que
-inyecta Claude Code: skills, avisos de comandos) y las de subagentes (sin `origin`) son **su
-encargo**. Se guarda `origin` = `"meta"` si `isMeta`, si no `origin.kind` (o NULL), para que la
-UI distinga sin reparsear.
+**`origin` de un `prompt`** [verificado en F1, recuento sobre 771 líneas `prompt` del disco]:
+no todo `prompt` lo escribió el usuario. El parser guarda `origin` = `"meta"` si la línea trae
+`isMeta: true`; si no, `origin.kind` tal cual; si no hay, NULL. Reglas que usa la UI:
+
+| Pregunta | Regla | Evidencia en disco |
+|---|---|---|
+| ¿Lo escribió el usuario? | **solo** `origin = "human"` | 385 líneas (348 texto + 37 comandos `/…`) |
+| ¿Es el **encargo** de un subagente? | el **primer** `prompt` de su fichero `agent-<id>.jsonl`, sea cual sea su `origin` (se decide por posición en F2) | 82 de 82 prompts sin `origin` en subagentes son el primero del fichero |
+| Todo lo demás | inyectado por Claude Code; se muestra atenuado | `meta` 135 (skills, avisos), `task-notification` 94, `peer` 12, y en el hilo principal NULL 78: 37 prompts del SDK (`promptSource: "sdk"`), 28 `[Request interrupted by user]`, 13 resúmenes de compactación |
+
+NULL en el hilo principal **no** significa "del usuario" ni "encargo".
 
 ### 6.4 Contrato de la caché
 
