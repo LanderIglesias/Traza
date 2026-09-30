@@ -117,16 +117,21 @@ def _agent_states(conn, now: float):
     # Terminado (§7.1): alguien de la sesión recibió su fin (resultado de primer plano o de skill
     # fork, o task-notification de segundo plano). Manda sobre lo demás: un Grep sin resultado
     # de un agente que ya terminó es una herramienta abandonada, no en curso.
-    # Primer plano: su toolUseId tiene resultado en el padre, salvo que ese resultado sea el de
-    # lanzarlo en segundo plano ("async_launched").
+    # Primer plano: su toolUseId tiene resultado en el padre, salvo que sea el de lanzarlo en
+    # segundo plano ("async_launched"). Y toda prueba de fin cuenta solo si es POSTERIOR a la
+    # última línea del agente: un resultado anterior es un lanzamiento, y líneas nuevas tras un
+    # fin son un agente reanudado. ponytail: compara timestamps ISO como texto (todos "…Z").
     done = set(conn.execute(f"""
-        SELECT a.session_id, a.agent_id FROM agents a WHERE a.agent_id <> 'main' AND (
-            EXISTS (SELECT 1 FROM events e WHERE e.session_id = a.session_id
-                      AND e.agent_ref = a.agent_id
-                      AND e.agent_status IN ({','.join('?' * len(DONE_STATUSES))}))
-            OR EXISTS (SELECT 1 FROM events e WHERE e.session_id = a.session_id
-                      AND e.kind = 'tool_result' AND e.tool_use_id = a.parent_tool_use_id
-                      AND e.agent_status IS NOT 'async_launched'))""", DONE_STATUSES))
+        SELECT a.session_id, a.agent_id FROM agents a
+        JOIN (SELECT session_id, agent_id, MAX(timestamp) AS last_ts FROM events
+              WHERE kind <> 'task_notification' GROUP BY session_id, agent_id) l
+          USING (session_id, agent_id)
+        WHERE a.agent_id <> 'main' AND EXISTS (
+            SELECT 1 FROM events e WHERE e.session_id = a.session_id AND e.timestamp >= l.last_ts
+              AND ((e.agent_ref = a.agent_id
+                    AND e.agent_status IN ({','.join('?' * len(DONE_STATUSES))}))
+                   OR (e.kind = 'tool_result' AND e.tool_use_id = a.parent_tool_use_id
+                       AND e.agent_status IS NOT 'async_launched')))""", DONE_STATUSES))
     agent_st = {}
     for sid, aid, kind, origin, stop in conn.execute("""
             SELECT e.session_id, e.agent_id, e.kind, e.origin, q.stop_reason
@@ -143,8 +148,9 @@ def _agent_states(conn, now: float):
     return agent_st, in_flight
 
 
-def overview(conn, now: float | None = None) -> dict:
-    """Todo lo que necesita la pantalla principal en una sola respuesta."""
+def overview(conn, now: float | None = None, states=None) -> dict:
+    """Todo lo que necesita la pantalla principal en una sola respuesta. `states`: el resultado
+    de _agent_states si ya se calculó (session_summary lo reutiliza para el árbol)."""
     now = time.time() if now is None else now
     sessions = {sid: {"id": sid, "project": project, "title": title}
                 for sid, project, title in conn.execute(
@@ -157,7 +163,7 @@ def overview(conn, now: float | None = None) -> dict:
                COALESCE(SUM(kind = 'api_error' OR (is_error = 1 AND denial IS NULL)), 0),
                COALESCE(SUM(is_error = 1 AND denial IS NOT NULL), 0)
         FROM events GROUP BY session_id""")}
-    agent_st, in_flight = _agent_states(conn, now)
+    agent_st, in_flight = states or _agent_states(conn, now)
     agent_types = {(sid, aid): t for sid, aid, t in conn.execute(
         "SELECT session_id, agent_id, agent_type FROM agents")}
     states = defaultdict(list)
@@ -220,7 +226,9 @@ def overview(conn, now: float | None = None) -> dict:
 
 def session_summary(conn, session_id: str, now: float | None = None) -> dict | None:
     """Resumen para el panel de trabajo (§7, clic en una sesión en F3)."""
-    s = next((s for s in overview(conn, now)["sessions"] if s["id"] == session_id), None)
+    now = time.time() if now is None else now
+    states = _agent_states(conn, now)   # una vez para la fila y el árbol
+    s = next((s for s in overview(conn, now, states)["sessions"] if s["id"] == session_id), None)
     if s is None:
         return None
     s["models"] = dict(conn.execute("""
@@ -231,7 +239,7 @@ def session_summary(conn, session_id: str, now: float | None = None) -> dict | N
         "SELECT first_ts FROM files WHERE session_id = ? AND agent_id = 'main'",
         (session_id,)).fetchone()
     s["started"] = s["started"][0] if s["started"] else None
-    s["tree"] = agent_tree(conn, session_id, now)
+    s["tree"] = agent_tree(conn, session_id, now, states)
     return s
 
 
@@ -253,7 +261,7 @@ def _task(conn, session_id: str, agent_id: str) -> str | None:
     return " ".join(text.split())[:TASK_CHARS] or None
 
 
-def agent_tree(conn, session_id: str, now: float | None = None) -> list[dict]:
+def agent_tree(conn, session_id: str, now: float | None = None, states=None) -> list[dict]:
     """Nodos del árbol de agentes de una sesión (§7, F4); el frontend los anida por `parent`.
     Coste propio = peticiones de las que este agente es dueño (§6.2: lo heredado de otra sesión
     no cuenta); acumulado = propio + el de todo su subárbol."""
@@ -267,9 +275,9 @@ def agent_tree(conn, session_id: str, now: float | None = None) -> list[dict]:
         return []
     parents = db.agent_parents(conn, session_id)
     orphans = db.orphans(conn, session_id)
-    # ponytail: calcula los estados de todas las sesiones para pintar una; ~ms con 26k eventos.
-    # Si pesa, filtrar las consultas de _agent_states por sesión.
-    states, _ = _agent_states(conn, now)
+    # ponytail: calcula los estados de TODAS las sesiones para pintar una (~150 ms con 26k
+    # eventos). Si pesa, filtrar las consultas de _agent_states por sesión.
+    states, _ = states or _agent_states(conn, now)
     signals = {aid: (e, b) for aid, e, b in conn.execute("""
         SELECT agent_id,
                COALESCE(SUM(kind = 'api_error' OR (is_error = 1 AND denial IS NULL)), 0),

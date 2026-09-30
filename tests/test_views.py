@@ -343,3 +343,29 @@ def test_notificacion_encolada_termina_al_subagente_sin_cambiar_el_turno(tmp_pat
     n = _nodes(_copy(tmp_path, queued))
     assert n["abc"]["state"] == "done"
     assert n["main"]["state"] == "idle"   # la notificación no es "la última línea" de main
+
+
+def test_resultado_anterior_al_trabajo_del_hijo_no_es_su_fin(tmp_path):
+    # Un resultado sin toolUseResult que llega ANTES de las líneas del hijo es un lanzamiento
+    # (p. ej. segundo plano desde un subagente), no un fin: el fin va después de su última línea.
+    def early(proj):
+        f = proj / "sess-A.jsonl"
+        f.write_text(f.read_text(encoding="utf-8").replace(
+            '"toolUseResult":{"isAsync":true,"status":"async_launched","agentId":"abc","description":"Buscar x"},', "")
+            .replace('"uuid":"u5","timestamp":"2026-01-01T10:00:20.000Z"', '"uuid":"u5","timestamp":"2026-01-01T10:00:10.000Z"'),
+            encoding="utf-8")
+    assert _nodes(_copy(tmp_path, early))["abc"]["state"] == "tool"
+
+
+def test_subagente_reanudado_deja_de_estar_terminado(tmp_path):
+    # "the same task-id may notify more than once": tras un fin, líneas nuevas = trabaja otra vez
+    def resumed(proj):
+        _append(proj / "sess-A.jsonl", {
+            "type": "user", "uuid": "u9", "timestamp": "2026-01-01T10:00:30.000Z",
+            "origin": {"kind": "task-notification"},
+            "message": {"role": "user", "content":
+                        "<task-notification><task-id>abc</task-id><status>completed</status>"}})
+        _append(proj / "sess-A" / "subagents" / "agent-abc.jsonl", {
+            "type": "user", "uuid": "r1", "timestamp": "2026-01-01T10:00:40.000Z",
+            "message": {"role": "user", "content": "sigue, por favor"}})
+    assert _nodes(_copy(tmp_path, resumed))["abc"]["state"] == "thinking"

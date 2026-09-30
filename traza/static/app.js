@@ -199,7 +199,6 @@ function agentRow(s, n, depth, hasKids) {
   if (hasKids) toggle.addEventListener("click", () => {
     ui.collapsed[open ? "add" : "delete"](key);
     renderTree(s);
-    $("tree-rows").querySelector(`[data-agent="${CSS.escape(n.id)}"] .toggle`)?.focus();
   });
   const desc = n.orphan === "sin_tool_use_id" ? n.task : n.description;
   const cell = el("div", { className: "agent-cell" }, toggle,
@@ -220,6 +219,8 @@ function agentRow(s, n, depth, hasKids) {
 }
 
 function renderTree(s) {
+  // cada tick redibuja las filas: el botón de plegar que tenía el foco lo recupera (§ accesibilidad)
+  const focused = document.activeElement?.closest?.(".tree tr")?.dataset.agent;
   const kids = new Map();
   for (const n of s.tree) {
     const p = n.orphan ? "(orphan)" : n.parent ?? "(root)";
@@ -239,6 +240,7 @@ function renderTree(s) {
   $("orphan-rows").replaceChildren(...(orphans.length ? [
     el("tr", { className: "orphan-h" }, el("td", { colSpan: 6, text: "Not attached to a parent agent" })),
     ...orphans] : []));
+  if (focused) document.querySelector(`.tree tr[data-agent="${CSS.escape(focused)}"] .toggle`)?.focus();
   for (const th of document.querySelectorAll(".tree th[data-sort]")) {
     if (ui.sort?.key === th.dataset.sort) th.setAttribute("aria-sort", ui.sort.dir < 0 ? "descending" : "ascending");
     else th.removeAttribute("aria-sort");

@@ -126,7 +126,7 @@ def _prompt_origin(d: dict, content) -> str | None:
 def _task_notification(content) -> tuple[str | None, str | None]:
     """(agente, estado) de un prompt <task-notification>. Si nombra varias tareas (resumen de
     una sesión anterior) no se atribuye a ninguna."""
-    text = content if isinstance(content, str) else ""
+    text = prompt_text(content)
     ids = re.findall(r"<task-id>([^<]*)</task-id>", text)
     status = re.search(r"<status>([^<]*)</status>", text)
     return (ids[0] if len(ids) == 1 else None), (status.group(1) if status else None)

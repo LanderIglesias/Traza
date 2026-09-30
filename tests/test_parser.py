@@ -191,3 +191,10 @@ def test_notificacion_encolada_llega_como_attachment():
                             attachment={"type": "queued_command", "prompt": "hola",
                                         "commandMode": "prompt"}))
     assert (other.events, other.ignored) == ([], "attachment")
+
+
+def test_notificacion_en_bloques_de_texto():
+    p = parse_line(line(type="user", uuid="u", timestamp="t", origin={"kind": "task-notification"},
+                        message={"role": "user", "content": [{"type": "text", "text":
+                            "<task-notification><task-id>a1</task-id><status>failed</status>"}]}))
+    assert (p.events[0].agent_ref, p.events[0].agent_status) == ("a1", "failed")

@@ -252,3 +252,9 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
 - **Coste por nodo = `traza.report`:** copia congelada, 57 sesiones, 150 nodos, 0 diferencias;
   acumulado de main + huérfanos = total de report en cada sesión (se excluye la copia del par
   "(fork)": report no conoce dueñas).
+- **`/code-review` de F4 (8dbdaab..56a9d3c), 4 hallazgos, todos corregidos con test:** un
+  resultado sin estado contaba como fin aunque llegara antes del trabajo del hijo; "done" no se
+  quitaba si el agente se reanudaba (ambos: la prueba de fin debe ser posterior a la última línea
+  del agente; sobre la copia congelada siguen 90 de 93 "done"); la notificación en bloques de
+  texto se perdía; el foco del botón de plegar se perdía en cada re-render (verificado en Chrome
+  tras 2 re-renders). De paso: `session_summary` calculaba los estados dos veces (667 → 350 ms).
