@@ -7,16 +7,19 @@ name = "traza"
 version = "0.0.1"
 description = "Local live panel for Claude Code agents, tokens and estimated cost"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["fastapi>=0.110", "uvicorn>=0.29"]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "httpx"]
+
+[project.scripts]
+traza = "traza.__main__:main"
 
 [tool.setuptools]
 packages = ["traza"]
 
 [tool.setuptools.package-data]
-traza = ["prices.toml"]
+traza = ["prices.toml", "static/*.html", "static/*.css", "static/*.js", "static/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

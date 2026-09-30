@@ -86,3 +86,15 @@ def test_lineas_sin_lo_esencial_son_unknown_no_desaparecen():
                 line(type="assistant", uuid="u", message={"content": "texto"}),
                 line(type="ai-title"), line(type="custom-title", customTitle=3)]:
         assert [e.kind for e in parse_line(raw).events] == ["unknown"], raw
+
+
+def test_prompts_que_el_modelo_nunca_contesta_tienen_su_origen():
+    # En disco: el modelo contesta 0 de 21 salidas de comandos locales y 1 de 9 interrupciones.
+    def origin(content, **extra):
+        return parse_line(line(type="user", uuid="u", timestamp="t",
+                               message={"role": "user", "content": content}, **extra)).events[0].origin
+    assert origin("[Request interrupted by user]") == "interrupted"
+    assert origin([{"type": "text", "text": "[Request interrupted by user for tool use]"}]) == "interrupted"
+    assert origin("<local-command-stdout>Set model to opus</local-command-stdout>") == "local-command"
+    assert origin("<command-name>/cost</command-name>", isMeta=True) == "local-command"
+    assert origin("texto de una skill", isMeta=True) == "meta"      # este sí lo contesta (92 %)

@@ -75,7 +75,7 @@ JSONL real), `pyproject.toml`, `traza/parser.py`, `traza/pricing.py`, `prices.to
 - `scan` sobre todo el disco real termina, y el tiempo del fichero de 43 MB queda anotado.
 - Borrar `traza.db` y repetir `scan` da los mismos números.
 
-## F3 — Servidor + lista de sesiones en vivo (~1 día)
+## F3 — Servidor + lista de sesiones en vivo (~1 día) — ✅ tests verdes, pendiente de revisión
 
 **Antes de la UI:** `impeccable init` (PRODUCT.md) + `impeccable shape` para fijar la dirección
 visual. `security-audit` en modo guía al tocar la frontera HTTP. (`impeccable` y
@@ -89,7 +89,9 @@ heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `
 - Al abrir el navegador se ven las sesiones con coste estimado; al lanzar una sesión nueva de
   Claude Code aparece en ≤ 1 s sin recargar.
 - `curl` con `Host: evil.com` → rechazado (test).
-- Borrar `traza.db` con el servidor abierto → el navegador detecta la nueva generación y recarga.
+- Un navegador conectado con una generación de caché distinta (la BD se reconstruyó: cambio de
+  versión o reinicio tras borrarla) recibe `reload` por SSE y recarga (test). Nota: en Windows no
+  se puede borrar `traza.db` con el servidor abierto (el watcher la tiene abierta).
 
 ## F4 — Árbol de agentes, estados y coste por agente (~1 día)
 

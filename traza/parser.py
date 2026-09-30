@@ -93,6 +93,26 @@ def _modifier(x) -> str | None:
     return None if x is None else (x if isinstance(x, str) else "?")
 
 
+def _prompt_origin(d: dict, content) -> str | None:
+    """De dónde viene un prompt (design.md §6.3). "interrupted" y "local-command" son líneas que el
+    modelo no contesta (en disco: 1 de 9 y 0 de 21), así que no dejan al agente "pensando"."""
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        text = " ".join(b["text"] for b in content
+                        if isinstance(b, dict) and isinstance(b.get("text"), str))
+    else:
+        text = ""
+    if text.lstrip().startswith("[Request interrupted"):
+        return "interrupted"
+    if "<local-command-stdout>" in text or "<command-name>" in text:
+        return "local-command"
+    if d.get("isMeta"):
+        return "meta"
+    o = d.get("origin")
+    return _str(o.get("kind")) if isinstance(o, dict) else None
+
+
 def parse_line(line: str) -> Parsed:
     """Nunca lanza: una línea que no se entiende es un evento `unknown` visible, no un crash del
     watcher. Recibe solo líneas completas (con su salto de línea): una a medias daría unknown."""
@@ -131,9 +151,7 @@ def _parse(d) -> Parsed:
                    if isinstance(b, dict) and b.get("type") == "tool_result"] \
             if isinstance(content, list) else []
         if not results:  # prompt: un evento por línea; el contenido completo se lee bajo demanda
-            o = d.get("origin")
-            origin = "meta" if d.get("isMeta") else (
-                _str(o.get("kind")) if isinstance(o, dict) else None)
+            origin = _prompt_origin(d, content)
             return Parsed(events=[Event("prompt", 0, uuid, ts, origin=origin)])
         return Parsed(events=[
             Event("tool_result", i, uuid, ts, tool_use_id=_str(b.get("tool_use_id")),

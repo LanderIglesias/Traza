@@ -41,3 +41,30 @@ def test_event_loop_responde_mientras_otro_tiene_el_cerrojo(tmp_path):
     assert worst < 0.1, f"el event loop se bloqueó {worst:.2f} s"
     with closing(db.connect(path)) as c:
         assert c.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 24
+
+
+def test_un_error_inesperado_no_mata_al_watcher(tmp_path, monkeypatch):
+    root = tmp_path / "projects"
+    shutil.copytree(FIX, root / "proj")
+    path = tmp_path / "traza.db"
+    import traza.watcher as w
+    real, calls = w.scan, []
+
+    def flaky(conn, r):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("fallo raro")      # p. ej. un bug; el siguiente tick debe seguir
+        return real(conn, r)
+    monkeypatch.setattr(w, "scan", flaky)
+
+    async def main():
+        task = asyncio.create_task(watch(path, root, interval=0.02))
+        for _ in range(200):
+            await asyncio.sleep(0.02)
+            if len(calls) >= 2:
+                break
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    asyncio.run(main())
+    with closing(db.connect(path)) as c:
+        assert c.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 24

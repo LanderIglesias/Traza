@@ -15,3 +15,6 @@ __pycache__/
 *.db-shm
 *.jsonl
 !tests/fixtures/**/*.jsonl
+
+# Capturas de revisión de interfaz: muestran datos reales de sesiones
+.impeccable/review/

@@ -300,6 +300,11 @@ no todo `prompt` lo escribió el usuario. El parser guarda `origin` = `"meta"` s
 
 NULL en el hilo principal **no** significa "del usuario" ni "encargo".
 
+Desde F3 el parser distingue además dos orígenes que el modelo **no contesta** (cuentan para el
+autómata de estado, §7): `interrupted` (texto que empieza por "[Request interrupted") y
+`local-command` (contiene `<local-command-stdout>` o `<command-name>`), con prioridad sobre
+`isMeta`.
+
 ### 6.4 Contrato de la caché
 
 **La caché es desechable; la fuente de verdad son los JSONL.**
@@ -389,8 +394,31 @@ Decisiones de F3 (revisión del brief, 30-09-2026):
     los eventos. En F3 solo existen las que no requieren análisis: errores de herramienta
     (`is_error`) y `api_error`. Bucles y reintentos llegan en F6.
   - Así la tabla puede decir "idle, pero con 2 errores".
-- **Sesión "viva"** = algún fichero suyo modificado hace < 2 min, **o** herramienta en vuelo hace
-  < 10 min (umbral de "colgada", §7.2). Constantes en un solo sitio.
+- **Sesión "viva"** = su estado (§7.1) es `tool` o `thinking`; **no** depende de "modificado hace
+  < N min", porque las respuestas se escriben de golpe al terminar (`findings.md` §1) y un modelo
+  que tarda 3 min en contestar no toca el fichero. Estado de una sesión = el del agente más
+  activo (`tool` > `thinking` > `idle`); el de un agente sale de su **última línea**:
+  - `tool_use` sin su `tool_result`, **de la última respuesta del agente y sin prompt
+    posterior** → `tool`. Las herramientas de respuestas anteriores ya acabaron o se
+    abandonaron (el modelo no vuelve a responder sin sus resultados): contarlas dejaría una
+    sesión en `tool` para siempre por una herramienta interrumpida [encontrado en F3 con la
+    fixture de la copia, test];
+  - última línea = **texto del modelo** → `idle` (si quisiera seguir, su última línea sería un
+    `tool_use`). **No se usa `stop_reason`**: las versiones 2.1.24–2.1.27 lo escriben `null`
+    incluso en la respuesta final (42 ficheros acaban así) [verificado en F3];
+  - `prompt` que el modelo **no contesta** → `idle`: salidas de comando local (`/model`,
+    `/cost`: 0 de 21 contestadas) e interrupciones (1 de 9) [verificado en F3; el parser las
+    marca con `origin` = `local-command` / `interrupted`];
+  - cualquier otro `prompt` (humano 99 % contestados, `isMeta` 92 %, notificaciones 92 %),
+    `tool_result`, `api_error`, `compact_boundary` → `thinking` (el modelo tiene el turno).
+  Única constante: si el fichero **del agente** lleva **> 10 min** sin cambiar (el mismo umbral
+  de herramienta colgada, §7.2), ese agente cuenta como `idle`; se aplica por agente para que
+  un subagente interrumpido no deje la sesión en `tool` mientras el principal sigue trabajando.
+  La pantalla se refresca también cada 30 s, porque estas transiciones solo dependen del tiempo
+  y no generan ningún tick de ficheros.
+- **Resumen de sesión en F4:** pasa a una **cabecera de una línea** encima del árbol (título,
+  coste propio/heredado, modelos) con el detalle en un acordeón plegado. El panel de trabajo
+  nunca apila resumen + árbol + juicio a la vez.
 - **Tarjeta "Live now" (coral):** la sesión viva más reciente: título, agente activo, herramienta
   y cuánto lleva. Con **2+ vivas**: la más reciente + "+N more", que al pulsar activa el filtro
   `Live`. Con **0 vivas**: no se queda un hueco gris; pasa a tono neutro con "Last active:
@@ -430,10 +458,12 @@ Decisiones de F3 (revisión del brief, 30-09-2026):
 
 | Estado | Regla | Tipo |
 |---|---|---|
-| Herramienta en vuelo | último `tool_use` sin `tool_result` casado | exacto |
-| Pensando | `mtime` reciente y último evento no es `tool_use` | heurístico |
-| Esperando / inactivo | `mtime` antiguo y `stop_reason = end_turn` | heurístico |
-| Terminado (solo subagentes) | su `toolUseId` aparece como `tool_result` en el padre | exacto |
+| Herramienta en vuelo (`tool`) | `tool_use` de su última respuesta sin `tool_result` ni prompt posterior | exacto |
+| Pensando (`thinking`) | última línea deja el turno al modelo (ver §7, reglas con datos) | heurístico |
+| Esperando / inactivo (`idle`) | última línea es texto del modelo, un prompt que no se contesta, o fichero quieto > 10 min | heurístico |
+| Terminado (solo subagentes) | su `toolUseId` aparece como `tool_result` en el padre (F4) | exacto |
+
+Reglas detalladas y su evidencia: §7, "Sesión viva".
 
 El agente principal nunca está "terminado": está "inactivo".
 
@@ -484,6 +514,16 @@ queda ninguna, el test se salta con ese motivo. Las copias (sesiones que compart
 - Escucha **solo en `127.0.0.1`**.
 - Valida la cabecera `Host` (contra DNS rebinding); `Origin`, si viene, debe coincidir; si no
   viene, se acepta. Sin token en v1 (panel de solo lectura).
+- **Riesgo aceptado (revisión de seguridad de F3):** el puerto de loopback lo puede abrir
+  **cualquier cuenta local del equipo**, que así vería títulos, proyectos y costes que en disco
+  solo puede leer el autor (`~/.claude` es de su usuario). En un portátil personal de un solo
+  usuario no cruza ninguna frontera; en una máquina compartida sí. Mitigación preparada si hace
+  falta: token aleatorio por arranque en la URL que abre `traza serve` (cookie `HttpOnly` +
+  `SameSite=Strict` tras el primer acceso). Decisión del autor, no aplicada en v1.
+- Revisado en F3 y cubierto por test: DNS rebinding (Host ajeno → 400), lectura cross-origin
+  (sin CORS; `Origin` ajeno o `null` → 403, también en SSE), JSON leído como script (`nosniff`),
+  XSS (solo `textContent` + CSP `script-src 'self'` sin inline), sin CSRF (todo es GET de solo
+  lectura), sin traversal (el id de sesión solo llega a SQLite como parámetro).
 - **Todo** el texto de los JSONL se pinta con `textContent`, nunca `innerHTML` (XSS).
 - Solo lectura sobre `~/.claude/`: traza nunca escribe ahí.
 - Estado propio en `~/.traza/` (config + `traza.db`), separado de los datos de Claude Code.

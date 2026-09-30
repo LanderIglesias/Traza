@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import os
 import sqlite3
+import traceback
 from collections import Counter
 from pathlib import Path
 
@@ -190,14 +191,21 @@ async def watch(db_path, root, interval: float = 0.5, on_tick=None) -> None:
     bloquea**. Cada tick corre en un hilo (`asyncio.to_thread`) con una conexión propia; si otro
     proceso tiene el cerrojo de escritura, quien espera es ese hilo, no el servidor."""
     conn = await asyncio.to_thread(db.connect, db_path, check_same_thread=False)
+    pending = None
     try:
         while True:
+            pending = asyncio.ensure_future(asyncio.to_thread(scan, conn, root))
             try:
-                stats = await asyncio.to_thread(scan, conn, root)
+                stats = await asyncio.shield(pending)  # si nos cancelan, el hilo termina su tick
             except sqlite3.OperationalError:  # cerrojo ocupado > 30 s: se reintenta luego
+                stats = None
+            except Exception:  # un fallo inesperado no puede congelar el panel en silencio
+                traceback.print_exc()
                 stats = None
             if stats and on_tick:
                 await on_tick(stats)
             await asyncio.sleep(interval)
     finally:
+        if pending is not None and not pending.done():
+            await asyncio.wait({pending})  # no cerrar la conexión mientras el hilo la usa
         conn.close()

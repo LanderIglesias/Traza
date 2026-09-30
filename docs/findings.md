@@ -160,3 +160,29 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
 - **Tests que pasaron en verde a la primera** (describían comportamiento ya existente): a los 5 se
   les rompió el código a propósito (mutación) y los 5 fallaron. Rutina desde ahora: un test nuevo
   no se da por bueno sin haberlo visto fallar.
+
+## F3 — Servidor y pantalla de sesiones contra los datos reales (30-09-2026)
+
+- **`stop_reason` no sirve para saber si un turno terminó.** Las versiones 2.1.24–2.1.27 lo
+  escriben `null` en muchas líneas, también en la respuesta final: 42 ficheros acaban en
+  `(stop_reason = null, text)`. Corrige la generalización de §1 (medida con la CLI 2.1.226). El
+  autómata usa "la última línea es texto del modelo" en su lugar.
+- **Qué prompts contesta el modelo** (siguiente línea `user`/`assistant` es del modelo): humano
+  387/390 (99 %), `isMeta` 130/142 (92 %), `task-notification` 84/91 (92 %), sin origen
+  100/131 (76 %), interrupciones 1/9, salidas de comando local 0/21.
+- **Herramientas "en vuelo" viejas:** una regla literal ("`tool_use` sin su `tool_result`")
+  dejaba sesiones en `tool` para siempre por herramientas interrumpidas; solo cuentan las de la
+  última respuesta del agente (hallado con la fixture de la copia).
+- **Los errores de herramienta son sobre todo bloqueos de hooks:** de 892 `tool_result` con
+  `is_error`, 515 (58 %) son hooks que bloquean (GateGuard y similares), 157 `Exit code`, 4
+  rechazos del usuario, 216 otros. El badge de F3 los cuenta todos y lo dice en su tooltip;
+  separarlos es trabajo de F6 (señales).
+- **Título "(fork)":** `7bc000bb`, a la que la regla de dueña (empezó antes) asigna las 1.274
+  peticiones compartidas, lleva un `custom-title` "…(fork)" que aparece en su línea 10.317, no
+  al principio. **Sin determinar** si Claude Code etiqueta así la sesión nueva o la de origen;
+  si fuera la nueva, la regla de dueña asignaría el coste a la copia. No afecta al total (cada
+  petición cuenta una vez), solo a en qué fila aparece.
+- **Latencia de una sesión nueva:** 0,07–0,28 s desde que aparece el fichero hasta el evento SSE
+  y la API (5 medidas, con un servidor sobre carpeta temporal para no ensuciar el historial).
+- Pantalla verificada en Chrome a 1440×900 y 390×844 (emulación móvil): sin desbordamiento
+  horizontal (`scrollWidth` = 390), consola sin errores, detector de impeccable sin hallazgos.
