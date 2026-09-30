@@ -125,7 +125,7 @@ def _ingest(conn, path: str, offset: int, mtime_ns: int, head: str | None) -> in
             events.append((path, line_offset, e.block, len(raw), e.uuid, session_id, agent_id,
                            e.timestamp, e.kind, e.tool_name, e.tool_use_id, e.is_error,
                            e.input_hash, e.origin, e.request_id, e.denial,
-                           e.agent_ref, e.agent_status))
+                           e.agent_ref, e.agent_status, e.chars))
         first_ts = first_ts or p.timestamp  # primera línea con hora, sea del tipo que sea
 
     # Las líneas de una misma respuesta pueden llegar en ticks distintos (como
@@ -138,8 +138,8 @@ def _ingest(conn, path: str, offset: int, mtime_ns: int, head: str | None) -> in
     conn.executemany("INSERT OR IGNORE INTO request_refs VALUES (?,?,?,?)", refs)
     conn.executemany("""INSERT OR IGNORE INTO events (file_path, byte_offset, block, length,
         uuid, session_id, agent_id, timestamp, kind, tool_name, tool_use_id, is_error,
-        input_hash, origin, request_id, denial, agent_ref, agent_status)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        input_hash, origin, request_id, denial, agent_ref, agent_status, chars)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                      events)
     conn.executemany("""INSERT INTO ignored VALUES (?, ?, ?)
         ON CONFLICT (file_path, type) DO UPDATE SET n = n + excluded.n""",

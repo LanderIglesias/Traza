@@ -138,6 +138,15 @@ heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `
   disco frío o antivirus); los siguientes solo leen lo nuevo", qué es y qué no, GIF de demo (revisado para que no muestre datos
   personales), contrato de caché y ventana rodante de 30 días, "coste estimado", resultado del
   test oráculo, cómo se verificó cada dato.
+- **Cifras del README y de las capturas con los números corregidos en F4** (el coste total
+  subió de $981,05 a $983,43 al corregir `output_tokens`): regenerarlas al final, no copiar
+  cifras de fases anteriores.
+- README, límites de lo que Claude Code escribe (no son bugs de traza): subagentes sin fin
+  registrado en disco (3 de 93) se quedan en "idle" con tooltip; `output_tokens` mal escrito
+  (aviso de plausibilidad); skill forks sin enlazar a su padre (decisión, design.md §6.1).
+- **Decidir antes de cerrar F7:** truncado/sustitución de un fichero **en vivo** (probado solo
+  con tests): o se prueba con un fichero real mientras corre el servidor, o se documenta como
+  limitación.
 - Gates finales: `impeccable audit` + `impeccable critique`, `security-audit` completo,
   `/code-review`, verificación contra el panel en ejecución real.
 

@@ -98,6 +98,7 @@ function renderCards(d) {
   $("health-text").textContent =
     `Parser health · ${h.unknown.toLocaleString("en-US")} unknown lines · ` +
     `${h.ignored.toLocaleString("en-US")} lines ignored on purpose (${h.ignored_types} types) · ` +
+    (h.implausible ? `${h.implausible.toLocaleString("en-US")} requests with implausibly low output tokens · ` : "") +
     `costs are estimates from public prices`;
 }
 
@@ -208,13 +209,18 @@ function agentRow(s, n, depth, hasKids) {
       desc ? el("span", { className: "agent-desc", text: desc, title: desc }) : null));
   cell.style.setProperty("--depth", depth);
   const po = perOut(n);
+  const out = n.output === null ? "?" : n.output.toLocaleString("en-US") + (n.implausible ? " ?" : "");
+  const statePill = pill(n.state);
+  // subagente parado sin prueba de fin: Claude Code no escribió cuándo terminó (findings §F4)
+  if (n.id !== "main" && n.state === "idle") statePill.title = "Idle · no end recorded on disk for this subagent";
   return el("tr", { "data-agent": n.id, "data-parent": n.parent ?? (n.orphan ? "(orphan)" : "(root)") },
     el("td", {}, cell),
-    el("td", {}, pill(n.state)),
+    el("td", {}, statePill),
     // data-label: en móvil cada fila es una tarjeta y la cabecera no se ve
     el("td", { className: "num", "data-label": "Own", text: money(n.cost, n.unpriced) }),
     el("td", { className: "num", "data-label": "Incl. subagents", text: money(n.total.cost, n.total.unpriced) }),
-    el("td", { className: "num", "data-label": "Output", text: n.output === null ? "?" : n.output.toLocaleString("en-US") }),
+    el("td", { className: "num", "data-label": "Output", text: out,
+      title: n.implausible ? `${n.implausible} of its requests report far fewer output tokens than the text they wrote (Claude Code wrote the number wrong): the real output, and cost, are higher` : "" }),
     el("td", { className: "num", "data-label": "$/1M out", text: po === null ? "–" : money(po) }));
 }
 

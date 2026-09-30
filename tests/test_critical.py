@@ -76,3 +76,51 @@ def test_parser_sobre_fixture_con_forma_real():
     req = parsed[7].request
     assert (req.model, req.speed, req.inference_geo, req.web_search_requests, req.stop_reason) == (
         "claude-sonnet-5", "standard", "not_available", 0, "tool_use")
+
+
+# --- 3. output_tokens crece dentro de una misma petición (findings.md §F4) --------------------
+# El oráculo compara traza con otro camino que lee el mismo JSONL: si los dos interpretan igual
+# de mal, coinciden (design.md §8). Esta regla falló desde F1 porque la fixture repetía el mismo
+# output en todas las líneas: con valores CONSTANTES "la primera" y "la mayor" son lo mismo.
+# Aquí los valores crecen y llegan en todos los órdenes, así que solo "la mayor" pasa.
+import itertools
+import json
+
+import pytest
+
+from traza import db
+from traza.watcher import scan
+
+ORDERS = list(itertools.permutations([100, 200, 300]))
+
+
+def _line(out: int) -> str:
+    return json.dumps({"type": "assistant", "uuid": f"u{out}", "requestId": "req_grow",
+                       "timestamp": "2026-01-02T00:00:00.000Z", "message": {
+                           "model": "claude-sonnet-5", "content": [{"type": "text", "text": "x"}],
+                           "usage": {"input_tokens": 3, "output_tokens": out,
+                                     "cache_read_input_tokens": 0, "cache_creation": {
+                                         "ephemeral_5m_input_tokens": 0,
+                                         "ephemeral_1h_input_tokens": 0}}}}) + "\n"
+
+
+@pytest.mark.parametrize("order", ORDERS)
+def test_output_es_el_mayor_en_el_parser(order):
+    reqs = dedupe_requests(parse_line(_line(o)).request for o in order)
+    assert reqs["req_grow"].tokens == Tokens(3, 300, 0, 0, 0)
+
+
+@pytest.mark.parametrize("order", ORDERS)
+@pytest.mark.parametrize("ticks", ["un tick", "un tick por línea"])
+def test_output_es_el_mayor_en_la_cache(tmp_path, order, ticks):
+    f = tmp_path / "projects" / "proj" / "grow.jsonl"
+    f.parent.mkdir(parents=True)
+    f.write_text("", encoding="utf-8")
+    conn = db.connect(tmp_path / "traza.db")
+    for o in order:
+        with open(f, "a", encoding="utf-8", newline="\n") as fh:
+            fh.write(_line(o))
+        if ticks == "un tick por línea":
+            scan(conn, tmp_path / "projects")
+    scan(conn, tmp_path / "projects")
+    assert [r.tokens.output for r in db.requests(conn)] == [300]

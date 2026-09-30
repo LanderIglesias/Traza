@@ -6,8 +6,8 @@ from pathlib import Path
 from .parser import Request, Tokens
 
 # Subir cualquiera de los dos borra y reconstruye la BD: no hay migraciones (§6.4).
-PARSER_VERSION = "11"
-SCHEMA_VERSION = "5"
+PARSER_VERSION = "12"
+SCHEMA_VERSION = "6"
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
@@ -47,6 +47,7 @@ CREATE TABLE events (
     input_hash TEXT, origin TEXT, request_id TEXT,
     denial TEXT,              -- toolDenialKind: la herramienta no se ejecutó (hook, permisos…)
     agent_ref TEXT, agent_status TEXT,  -- subagente lanzado/notificado y su estado (§7.1)
+    chars INTEGER,            -- text / tool_use: caracteres escritos (plausibilidad de output, §8)
     UNIQUE (file_path, byte_offset, block)
 );
 CREATE INDEX events_agent ON events (session_id, agent_id, id);
@@ -170,6 +171,25 @@ def orphans(conn, session_id: str) -> dict[str, str]:
                           AND e.kind = 'tool_use' AND e.tool_use_id = a.parent_tool_use_id)
                 FROM agents a WHERE a.session_id = ? AND a.agent_id <> 'main'""", (session_id,))
             if parent is None}
+
+
+# Plausibilidad de output_tokens (design.md §8): menos de 1 token por cada 40 caracteres que el
+# modelo escribió es 10 veces menos que una estimación generosa (~4 caracteres/token). En disco:
+# 373 de 8.786 peticiones (p. ej. 31 tokens para 10.316 caracteres). Es un AVISO contado: traza
+# no puede corregir lo que Claude Code escribió mal.
+CHARS_PER_TOKEN_FLOOR = 40
+
+
+def implausible_output(conn) -> set[str]:
+    """requestIds cuyo output_tokens es implausiblemente bajo para lo que escribieron. Los
+    caracteres se suman por fichero (una copia de sesión repite las mismas líneas)."""
+    return {rid for rid, in conn.execute(f"""
+        SELECT q.request_id FROM requests q JOIN (
+            SELECT request_id, MAX(c) AS chars FROM (
+                SELECT request_id, file_path, SUM(chars) AS c FROM events
+                WHERE request_id IS NOT NULL GROUP BY request_id, file_path)
+            GROUP BY request_id) w USING (request_id)
+        WHERE q.output IS NOT NULL AND q.output * {CHARS_PER_TOKEN_FLOOR} < w.chars""")}
 
 
 def ignored_counts(conn) -> dict[str, int]:

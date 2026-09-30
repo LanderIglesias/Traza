@@ -75,7 +75,7 @@ def test_overview_sobre_la_fixture(conn):
     # la ventana suma cada petición una vez (req_1 no se cuenta dos veces)
     assert ov["window"] == {"cost": pytest.approx(0.001223), "unpriced": 0}
     assert ov["counts"] == {"live_sessions": 1, "active_agents": 1, "sessions": 2}
-    assert ov["health"] == {"unknown": 1, "ignored": 4, "ignored_types": 4}
+    assert ov["health"] == {"unknown": 1, "ignored": 4, "ignored_types": 4, "implausible": 0}
     assert ov["generation"] == db.generation(conn)
     # orden: última actividad primero (ISO-8601, comparable como texto)
     acts = [s["last_activity"] for s in ov["sessions"]]
@@ -369,3 +369,11 @@ def test_subagente_reanudado_deja_de_estar_terminado(tmp_path):
             "type": "user", "uuid": "r1", "timestamp": "2026-01-01T10:00:40.000Z",
             "message": {"role": "user", "content": "sigue, por favor"}})
     assert _nodes(_copy(tmp_path, resumed))["abc"]["state"] == "thinking"
+
+
+def test_output_implausible_se_ve_en_salud_y_en_el_nodo(conn):
+    assert views.overview(conn, now=time.time())["health"]["implausible"] == 0
+    conn.execute("UPDATE events SET chars = 5000 WHERE request_id = 'req_s1'")   # 7 tokens
+    assert views.overview(conn, now=time.time())["health"]["implausible"] == 1
+    n = _nodes(conn)
+    assert (n["abc"]["implausible"], n["main"]["implausible"]) == (1, 0)

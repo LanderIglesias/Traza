@@ -53,6 +53,7 @@ class Event:
     denial: str | None = None   # solo tool_result con error: toolDenialKind (no se ejecutó)
     agent_ref: str | None = None     # subagente al que se refiere (lanzamiento o notificación)
     agent_status: str | None = None  # async_launched, completed, forked, failed, stopped…
+    chars: int | None = None    # text / tool_use: caracteres escritos por el modelo (plausibilidad)
 
 
 @dataclass
@@ -203,11 +204,16 @@ def _parse(d) -> Parsed:
             if bt == "thinking":
                 continue  # texto vacío en disco: no hay nada que mostrar
             if bt == "text":
-                events.append(Event("text", i, uuid, ts, request_id=rid))
+                text = b.get("text")
+                events.append(Event("text", i, uuid, ts, request_id=rid,
+                                    chars=len(text) if isinstance(text, str) else None))
             elif bt == "tool_use":
+                name = _str(b.get("name"))
                 events.append(Event("tool_use", i, uuid, ts, request_id=rid,
-                                    tool_name=_str(b.get("name")), tool_use_id=_str(b.get("id")),
-                                    input_hash=input_hash(b.get("input"))))
+                                    tool_name=name, tool_use_id=_str(b.get("id")),
+                                    input_hash=input_hash(b.get("input")),
+                                    chars=len(name or "") + len(json.dumps(b.get("input"),
+                                                                           ensure_ascii=False))))
             else:
                 events.append(Event("unknown", i, uuid, ts, request_id=rid))
         return Parsed(events=events, request=_request(rid, msg, ts) if rid else None)

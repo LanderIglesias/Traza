@@ -362,3 +362,24 @@ def test_output_que_crece_en_otro_tick_actualiza_la_peticion(root, conn):
     got = {r.request_id: r for r in db.requests(conn)}["req_live"]
     assert got.tokens.output == 257
     assert got.stop_reason == "tool_use"      # el último no nulo, llegado en el segundo tick
+
+
+@pytest.mark.parametrize("output, text, flagged", [
+    (1, "x" * 2000, True),     # 1 token para 2.000 caracteres: mal escrito por Claude Code
+    (300, "x" * 2000, False),
+    (1, "Ok.", False),          # respuesta corta de verdad: no se marca
+    (None, "x" * 2000, False),  # sin usage: ya es "?", no "sospechosa"
+], ids=["1-para-2000", "300-para-2000", "respuesta-corta", "sin-usage"])
+def test_output_implausible_se_cuenta_no_se_corrige(root, conn, output, text, flagged):
+    # 373 peticiones en disco declaran < 1 token por cada 40 caracteres escritos (p. ej. 31 tokens
+    # para 10.316 caracteres de JSON). traza no puede corregir el número: lo señala.
+    usage = {} if output is None else {"usage": {
+        "input_tokens": 1, "output_tokens": output, "cache_read_input_tokens": 0,
+        "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0}}}
+    (root / "proj" / "p.jsonl").write_text(json.dumps({
+        "type": "assistant", "uuid": "a", "requestId": "req_p", "timestamp": "2026-01-02T00:00:00Z",
+        "message": {"model": "claude-sonnet-5", "content": [{"type": "text", "text": text}],
+                    **usage}}) + "\n", encoding="utf-8")
+    scan(conn, root)
+    assert ("req_p" in db.implausible_output(conn)) is flagged
+    assert db.implausible_output(conn) <= {"req_p"}     # la fixture no tiene ninguna

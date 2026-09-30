@@ -219,7 +219,9 @@ def overview(conn, now: float | None = None, states=None) -> dict:
                    "sessions": len(sessions)},
         "health": {"unknown": conn.execute(
                        "SELECT COUNT(*) FROM events WHERE kind = 'unknown'").fetchone()[0],
-                   "ignored": sum(ignored.values()), "ignored_types": len(ignored)},
+                   "ignored": sum(ignored.values()), "ignored_types": len(ignored),
+                   # output_tokens mal escrito por Claude Code: aviso contado (design.md §8)
+                   "implausible": len(db.implausible_output(conn))},
         "sessions": sorted(sessions.values(), key=lambda s: s["last_activity"], reverse=True),
     }
 
@@ -285,11 +287,13 @@ def agent_tree(conn, session_id: str, now: float | None = None, states=None) -> 
         FROM events WHERE session_id = ? GROUP BY agent_id""", (session_id,))}
     owner_agent = dict(conn.execute("""SELECT request_id, owner_agent_id FROM request_owner
                                        WHERE owner_session_id = ?""", (session_id,)))
-    costs, outputs = defaultdict(list), defaultdict(list)
+    costs, outputs, implausible = defaultdict(list), defaultdict(list), defaultdict(int)
+    suspect = db.implausible_output(conn)
     for r in db.requests(conn, session_id):
         a = owner_agent[r.request_id]
         costs[a].append(request_cost(r))
         outputs[a].append(r.tokens.output)
+        implausible[a] += r.request_id in suspect
     children = defaultdict(list)
     for aid, parent in parents.items():
         if parent is not None and parent != aid:
@@ -315,6 +319,7 @@ def agent_tree(conn, session_id: str, now: float | None = None, states=None) -> 
             "state": states.get((session_id, aid), "idle"),
             "requests": len(costs[aid]),
             "output": None if None in outs else sum(outs),
+            "implausible": implausible[aid],   # peticiones con output_tokens sospechoso
             **_money(costs[aid]),
             "total": _money(subtree(aid, {aid})),
             "errors": errors, "blocked": blocked, "started": started,

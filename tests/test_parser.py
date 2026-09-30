@@ -198,3 +198,14 @@ def test_notificacion_en_bloques_de_texto():
                         message={"role": "user", "content": [{"type": "text", "text":
                             "<task-notification><task-id>a1</task-id><status>failed</status>"}]}))
     assert (p.events[0].agent_ref, p.events[0].agent_status) == ("a1", "failed")
+
+
+def test_caracteres_escritos_por_el_modelo():
+    # Para la comprobación de plausibilidad de output_tokens (design.md §8): cuánto escribió.
+    p = parse_line(line(type="assistant", requestId="r", uuid="u", timestamp="t", message={
+        "model": "m", "content": [{"type": "text", "text": "hola"},
+                                  {"type": "tool_use", "id": "t", "name": "Bash",
+                                   "input": {"command": "ls"}},
+                                  {"type": "thinking", "thinking": ""}]}))
+    assert [(e.kind, e.chars) for e in p.events] == [
+        ("text", 4), ("tool_use", len("Bash") + len('{"command": "ls"}'))]

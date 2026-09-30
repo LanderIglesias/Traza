@@ -164,6 +164,11 @@ se reconecta solo.
     lo que la identifica es el principio de su encargo ("Review target: …"). F4 muestra
     "fork de skill" + ese principio, no "padre desconocido". UI: "lanzado
     fuera de la herramienta Agent".
+    **Decisión F4 — no se enlazan con su padre.** El `tool_result` de la skill trae el `agentId`
+    del fork (`toolUseResult.status = "forked"`, 11 en disco), así que el enlace es posible;
+    pero ese resultado llega cuando el fork **termina**: el nodo saltaría de raíz a hijo a mitad
+    de sesión. Un fork que se queda como raíz con la etiqueta "skill fork" es más claro que un
+    nodo que cambia de sitio.
   - `padre_no_encontrado`: dice quién lo lanzó, pero ese `tool_use` no está en la sesión (0 en
     disco). UI: "padre desconocido".
 - **Huérfano temporal en vivo — decisión: no se añade espera en la UI.** El `tool_use` que lanza
@@ -472,6 +477,12 @@ Reglas detalladas y su evidencia: §7, "Sesión viva".
 
 El agente principal nunca está "terminado": está "inactivo".
 
+**Estas reglas dependen de la versión de Claude Code.** El formato del JSONL no está
+documentado y ha cambiado dentro de la 2.1.x: `stop_reason` null al terminar (≤ 2.1.268), la
+línea de texto de un subagente escrita antes que su herramienta (2.1.284), la notificación de
+fin encolada como `attachment`. Cada regla cita la versión en la que se midió; hay que volver a
+medirlas en disco cada pocos meses o al ver un estado raro en el panel.
+
 ### 7.2 Señales automáticas (deterministas, con test cada una)
 
 Se muestran como **señal**, no veredicto; al pulsarlas llevan a los eventos que las causan.
@@ -508,6 +519,19 @@ queda ninguna, el test se salta con ese motivo. Las copias (sesiones que compart
    `requestId` con otra) se informan como *known issue*, no como fallo. Así el test es verde hoy
    y se pone rojo solo si una sesión sana deja de cuadrar. Este test corre solo en local: depende
    de datos reales que no están en el repo.
+   **Límite estructural del oráculo:** solo detecta los errores que **no comparte** con el
+   parser. Si los dos caminos interpretan el JSONL igual de mal, coinciden y el test pasa. Así
+   vivió desde F1 hasta F4 el bug de `output_tokens` (se tomaba el de la primera línea; crece
+   entre líneas): el oráculo y la caché aplicaban la misma regla y la fixture repetía el mismo
+   valor en todas las líneas. Se encontró midiendo con datos reales (207.240 frente a 1.827
+   tokens), no por un test. Por eso, además del oráculo:
+   - **tests de regla con datos que distinguen las alternativas** (`test_critical.py` §3:
+     valores 100/200/300 en todos los órdenes; "primera" y "última" fallan, solo "mayor" pasa);
+   - **comprobación de plausibilidad**, un aviso contado y no una aserción: una petición que
+     declara menos de 1 token de salida por cada 40 caracteres escritos (10 veces menos que una
+     estimación generosa) se cuenta en la barra de salud y se marca con `?` en su agente. En
+     disco: 373 de 8.786 (p. ej. 31 tokens para 10.316 caracteres de JSON). traza no puede
+     corregir ese número: lo escribió así Claude Code.
 3. **Tests del parser** por tipo de línea, incluidos `<synthetic>`, sin `requestId`, `unknown`.
 4. **Tests del watcher:** línea parcial, truncado, borrado, idempotencia al reprocesar.
 5. **Test de seguridad:** una salida de herramienta con `<script>` no se ejecuta; `Host` ajeno →
