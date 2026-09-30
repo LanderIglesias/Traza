@@ -46,7 +46,12 @@ produjo otra cosa (ver §3).
   21.954 de 21.974): no es una copia única al principio, sino dos ficheros que reciben las
   mismas peticiones a lo largo del tiempo.
 - La copia no menciona el id de la original en ningún campo.
-- Dentro de `3416476c` hay **4 `uuid` repetidos con contenido distinto** (todos `attachment`).
+- Dentro de `3416476c` hay **4 `uuid` repetidos** (todos `attachment` de tipo `hook_success`,
+  `PreToolUse:Bash`, líneas 1906–1919 y otra vez en 1957–1960, con el mismo `timestamp`).
+  Parece que Claude Code **vuelve a escribir** esas salidas de hook unas 50 líneas después. En
+  una de ellas solo cambia el `parentUuid`: se reenganchan a otro mensaje. **Pendiente de
+  investigar por qué; no afecta a v1**: `attachment` se ignora y la idempotencia es por
+  posición.
 - El `cost-state` de `3416476c` (línea 13.299) tiene `startTime` del 23-09 07:37 y dice
   458.149 tokens de salida de `claude-opus-5-5`; en su ventana `[startTime, línea]` el JSONL
   tiene 864.273, **todas** peticiones compartidas con `7bc000bb`. No cuadra con ninguna ventana
@@ -104,5 +109,4 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
 
 - La prueba en vivo creó una sesión real en
   `~/.claude/projects/C--Users-Usuario-AppData-Local-Temp-traza-f0/` (2 respuestas de Haiku,
-  coste de céntimos). Aparecerá en traza como una sesión más. Borrarla es decisión del autor;
-  Claude Code la eliminará a los 30 días.
+  coste de céntimos). **Borrada el 30-09-2026** junto con los scripts desechables de `%TEMP%`.

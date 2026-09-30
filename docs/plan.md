@@ -57,7 +57,8 @@ JSONL real), `pyproject.toml`, `traza/parser.py`, `traza/pricing.py`, `prices.to
   cada petición una vez.
 - **Test oráculo** (política de `design.md` §8): recorre todas las sesiones con `cost-state`,
   informa cuáles cuadran; exige coincidencia **exacta** de tokens por modelo en la lista de
-  sesiones sanas (`36b96010`, `598796c2`); las copias se informan como *known issue*. Corre solo
+  sesiones sanas (`36b96010`, `598796c2`) **que sigan en disco** (las ausentes se
+  informan, no fallan); las copias se informan como *known issue*. Corre solo
   en local contra datos reales; no se commitea ningún dato real.
 
 ## F2 — Caché SQLite + watcher (~1 día)

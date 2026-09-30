@@ -139,7 +139,7 @@ se reconecta solo.
 | `files` | `path` | `session_id`, `agent_id` (`main` para el fichero principal; el id del subagente para `subagents/agent-<id>.jsonl`), `size`, `mtime`, `offset` |
 | `sessions` | `session_id` | proyecto, `cwd`, título (`ai-title`/`custom-title`), inicio, última actividad |
 | `agents` | `(session_id, agent_id)` | `parent_agent_id` (NULL = raíz/huérfano), `parent_tool_use_id`, `agent_type`, `description`, `spawn_depth` |
-| `requests` | `request_id` | `session_id`, `agent_id`, hora, modelo, `input`, `output`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `speed`, `inference_geo`, `web_search_requests`, `stop_reason` |
+| `requests` | `request_id` | `owner_session_id`, `owner_agent_id`, hora, modelo, `input`, `output`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `speed`, `inference_geo`, `web_search_requests`, `stop_reason` |
 | `events` | `id INTEGER PRIMARY KEY AUTOINCREMENT` | `(file_path, byte_offset, block)` UNIQUE, `uuid` (solo verificación), `session_id`, `agent_id`, hora, `kind`, `tool_name`, `tool_use_id`, `is_error`, `input_hash`, `request_id`, `file_path`, `byte_offset`, `length` |
 
 Índices: `events(agent_id, id)`, `events(tool_use_id)`, `events(uuid)`, `events(request_id)`,
@@ -169,6 +169,18 @@ se reconecta solo.
   cuya dueña ya no existe se **reasigna** a la sesión viva más antigua que aún tenga eventos
   apuntándola, y solo se borra si ninguna la referencia. Así, cuando Claude Code borre la
   original a los 30 días, la copia recupera el coste de lo heredado en vez de quedarse a 0.
+- **Coste heredado sin reparsear:** no hace falta un campo `inherited_from_session_id` en
+  `requests`, porque una petición puede estar heredada por varias sesiones y una columna solo
+  guarda una. Se deriva con una consulta: las peticiones heredadas por la sesión `S` son las de
+  sus eventos cuyo dueño es otra sesión.
+  ```sql
+  SELECT r.owner_session_id, COUNT(DISTINCT r.request_id)
+  FROM events e JOIN requests r ON r.request_id = e.request_id
+  WHERE e.session_id = :S AND r.owner_session_id <> :S
+  GROUP BY r.owner_session_id
+  ```
+  Con eso la UI puede pintar cualquiera de las tres presentaciones de §7 (índice
+  `events(request_id)` ya previsto).
 
 ### 6.3 Reglas de ingesta
 
@@ -210,8 +222,11 @@ se reconecta solo.
 | tipo o subtipo en la lista de ignorados | no crea evento; suma al contador de ignorados |
 | cualquier otra cosa | `unknown` |
 
-Una línea puede producir varios eventos (uno por bloque); `block` es el índice del bloque
-dentro de la línea.
+Una línea puede producir varios eventos (uno por bloque). **`block` es el índice del bloque en
+el array `message.content`** (0, 1, 2…), no un contador por tipo: dos bloques `text` seguidos
+tienen `block` distinto. Un mensaje `user` con varios `tool_result` (herramientas pedidas en
+paralelo) produce **un evento por cada `tool_result`**, cada uno con su `block` y su
+`tool_use_id`. Si `message.content` es un string (prompt de texto plano), `block = 0`.
 
 ### 6.4 Contrato de la caché
 
@@ -266,6 +281,13 @@ disponible"**, un único estado de error.
 ```
 
 - **Sesiones:** vivas arriba; título, proyecto, estado, coste estimado, última actividad.
+- **Coste de una sesión con peticiones heredadas** (§6.2). **Decisión pendiente antes de F3.**
+  Hay tres opciones y los datos permiten cualquiera de ellas:
+  - (a) coste propio en grande y, en pequeño y gris, "hereda N peticiones de <sesión> (+$X)"
+    (**recomendada**: la más honesta);
+  - (b) solo el coste propio, con un icono de cadena y un tooltip;
+  - (c) propio + heredado junto con un aviso. El riesgo de (c) es que la suma de las sesiones
+    ya no cuadra con el total.
 - **Árbol:** colapsable; el estado de colapsado vive en memoria del JS y los ticks SSE no lo
   resetean. Coste: **propio en grande**; en nodos con hijos, **acumulado pequeño en gris**.
   Columna ordenable **coste por token de salida**.
@@ -312,7 +334,9 @@ Los umbrales viven en un solo bloque de constantes.
    prueba puntual de exactitud, no una suite de regresión. Las llamadas internas (Haiku) se
    excluyen de la comparación. **Política:** el test recorre todas las sesiones con
    `cost-state`, informa cuáles cuadran y cuáles no, y exige que cuadren **al menos** las de una
-   lista escrita de sesiones sanas (`36b96010`, `598796c2`). Las copias (sesiones que comparten
+   lista escrita de sesiones sanas (`36b96010`, `598796c2`) **que sigan en disco**. Las que ya no
+existan (limpieza de 30 días) se informan como "ausente" y no ponen el test en rojo; si no
+queda ninguna, el test se salta con ese motivo. Las copias (sesiones que comparten
    `requestId` con otra) se informan como *known issue*, no como fallo. Así el test es verde hoy
    y se pone rojo solo si una sesión sana deja de cuadrar. Este test corre solo en local: depende
    de datos reales que no están en el repo.
