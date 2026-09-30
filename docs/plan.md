@@ -101,7 +101,8 @@ heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `
 - El subagente **no** aparece un instante como huérfano antes de colocarse bajo su padre
   (design.md §6.1, decisión "huérfano temporal"). Si aparece, la UI retrasa un tick los
   `padre_no_encontrado` recientes.
-- Huérfanos con marca distinta según `db.orphans` (`sin_tool_use_id` / `padre_no_encontrado`).
+- Huérfanos con marca distinta según `db.orphans`: `sin_tool_use_id` se muestra como "fork de
+  skill" con el principio de su encargo; `padre_no_encontrado` como "padre desconocido".
 - Columna "coste por token de salida" ordenable.
 
 ## F5 — Vista de juicio y contenido bajo demanda (~1 día)
@@ -131,7 +132,8 @@ heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `
 
 - Instalación en un comando **desde el repo**: `pipx install git+https://github.com/<usuario>/traza`.
   Publicar en PyPI (`pipx install traza`) solo si el tiempo lo permite.
-- README en inglés con: qué es y qué no, GIF de demo (revisado para que no muestre datos
+- README en inglés con: "el primer arranque construye la caché (~2 s con 90k líneas, más con
+  disco frío o antivirus); los siguientes solo leen lo nuevo", qué es y qué no, GIF de demo (revisado para que no muestre datos
   personales), contrato de caché y ventana rodante de 30 días, "coste estimado", resultado del
   test oráculo, cómo se verificó cada dato.
 - Gates finales: `impeccable audit` + `impeccable critique`, `security-audit` completo,

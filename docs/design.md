@@ -95,7 +95,15 @@ tras usar v1 se echa de menos. Requiere modificar `settings.json` con instalador
                    (5) HTML + CSS + JS modules
 ```
 
-1. **Watcher** — tarea asíncrona dentro de FastAPI (sin hilos). Cada 0,5 s:
+1. **Watcher** — tarea asíncrona dentro de FastAPI (`watcher.watch`). **Invariante: el event loop
+   nunca se bloquea.** Cada tick (`scan`) corre entero en `asyncio.to_thread` con **una conexión
+   propia**: la espera por cerrojo (hasta 30 s si `python -m traza.scan` está escribiendo) solo
+   detiene a ese hilo; heartbeats SSE y peticiones HTTP siguen atendiéndose. Si el cerrojo no se
+   libera en 30 s, se pierde ese tick y se reintenta en el siguiente. Los endpoints de lectura
+   son funciones síncronas (`def`), que FastAPI ya ejecuta en su pool de hilos; con WAL los
+   lectores no esperan al escritor. [test: `test_watch_loop.py` mide que el loop no se retrasa
+   más de 0,1 s con el cerrojo tomado por otra conexión; con la versión ingenua (scan dentro del
+   loop) el mismo test se bloquea 30 s y falla]. Cada 0,5 s:
    - dos `glob` para ficheros nuevos: `projects/*/*.jsonl` (sesiones principales) y
      `projects/*/*/subagents/*.jsonl` (subagentes). No se usa `**` para no recorrer carpetas
      que no contienen transcripts;
@@ -125,7 +133,10 @@ tras usar v1 se echa de menos. Requiere modificar `settings.json` con instalador
    (`executemany`) que empieza con `BEGIN IMMEDIATE` **antes** de leer los offsets: si corren dos
    escáneres a la vez (servidor + `python -m traza.scan`), el segundo espera (hasta 30 s) y ve lo
    que escribió el primero, en vez de trabajar con offsets viejos. Los lectores no esperan (WAL).
-   La raíz se normaliza a ruta absoluta, así que las rutas guardadas no dependen de cómo se llame.
+   La raíz se normaliza con `Path.resolve()`: ruta absoluta, **enlaces simbólicos resueltos**
+   (equivale a `realpath`) y, en Windows, las **mayúsculas reales** del disco [verificado: la
+   ruta en minúsculas y en mayúsculas resuelven a la misma; test]. Todas las rutas guardadas
+   salen de un `glob` sobre esa raíz, así que no puede haber dos grafías del mismo fichero.
    Un `meta.json` que aún no existe o está a medio escribir se **reintenta cada tick**
    (`agents.meta_read = 0`) aunque el `.jsonl` ya no cambie.
 4. **FastAPI** — sirve la página, la API JSON y un endpoint SSE.
@@ -148,7 +159,10 @@ se reconecta solo.
   (`db.orphans`, calculado al consultar como el padre):
   - `sin_tool_use_id`: su `meta.json` **leído completo** no dice quién lo lanzó; **nunca** tendrá
     padre. En disco, 8 de 90 subagentes, **todos** forks de la skill `/code-review` [verificado].
-    Un `meta.json` que aún no se ha podido leer cuenta como `padre_no_encontrado` (puede llegar). UI: "lanzado
+    Un `meta.json` que aún no se ha podido leer cuenta como `padre_no_encontrado` (puede llegar).
+    Su `meta.json` no dice qué skill fue (`{"agentType": "general-purpose", "spawnDepth": 1}`):
+    lo que la identifica es el principio de su encargo ("Review target: …"). F4 muestra
+    "fork de skill" + ese principio, no "padre desconocido". UI: "lanzado
     fuera de la herramienta Agent".
   - `padre_no_encontrado`: dice quién lo lanzó, pero ese `tool_use` no está en la sesión (0 en
     disco). UI: "padre desconocido".
@@ -291,7 +305,9 @@ NULL en el hilo principal **no** significa "del usuario" ni "encargo".
 **La caché es desechable; la fuente de verdad son los JSONL.**
 - Se puede borrar `~/.traza/traza.db` en cualquier momento y se reconstruye.
 - traza solo borra un fichero de BD si es **suya** (tabla `meta` con `cache_generation`) o una BD
-  SQLite **vacía** (creación interrumpida); una ruta `--db` que apunte a otra cosa da error y no se
+  SQLite **vacía**, entendida como **sin ninguna tabla** (creación interrumpida). Una caché con
+  esquema pero sin filas (máquina sin sesiones) es válida y **no** se toca [test: se reabre con
+  la misma generación]; una ruta `--db` que apunte a otra cosa da error y no se
   toca. La creación del esquema es una sola transacción: un Ctrl+C a medias deja una BD vacía.
 - Si la versión cambia mientras otro proceso de traza tiene la BD abierta: en Windows, error claro
   ("en uso por otro proceso"); en POSIX el proceso viejo sigue escribiendo en un fichero ya
