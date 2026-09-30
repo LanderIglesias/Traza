@@ -124,3 +124,25 @@ def test_serve_con_el_puerto_ocupado_no_abre_nada(capsys):
         port = s.getsockname()[1]
         assert main(["serve", "--no-open", "--port", str(port)]) == 1
     assert "in use" in capsys.readouterr().err
+
+
+def test_sse_latido_tick_y_cierre():
+    # EventSource no expone los comentarios (": ping"): el latido tiene que ser un evento con
+    # nombre para que el cliente detecte una conexión muerta (design.md §10). Se prueba el
+    # generador directamente: el TestClient no avisa de la desconexión de un stream infinito.
+    async def main():
+        hub = server.Hub()
+        stream = server.sse_stream(hub, "g1", "g1", 0.05, lambda: asyncio.sleep(0, False))
+        first = await asyncio.wait_for(anext(stream), 1)
+        ping = await asyncio.wait_for(anext(stream), 1)      # nada que contar: latido
+        hub.publish({"id": 7, "gen": "g1"})
+        tick = await asyncio.wait_for(anext(stream), 1)
+        hub.close()                                           # el servidor se apaga
+        with pytest.raises(StopAsyncIteration):
+            await asyncio.wait_for(anext(stream), 1)
+        return first, ping, tick, len(hub.queues)
+    first, ping, tick, left = asyncio.run(main())
+    assert first.startswith("event: hello")
+    assert ping == "event: ping\ndata: {}\n\n"
+    assert tick.startswith("id: 7\nevent: tick")
+    assert left == 0                                          # se desuscribió al terminar

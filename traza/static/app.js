@@ -63,7 +63,7 @@ function renderCards(d) {
   note.hidden = !d.window.unpriced;
   note.textContent = d.window.unpriced
     ? `${d.window.unpriced.toLocaleString("en-US")} requests unpriced, not included` : "";
-  $("live-sessions").textContent = d.counts.live_sessions;
+  $("today-cost").textContent = money(d.today.cost, d.today.unpriced);
   $("active-agents").textContent = d.counts.active_agents;
 
   const live = d.sessions.filter((s) => s.live);
@@ -186,18 +186,46 @@ function refreshSoon() {                     // varios ticks seguidos → una so
   pending = setTimeout(refresh, 150);
 }
 
-function connect(gen) {
-  const conn = $("conn");
-  const es = new EventSource(`/events?gen=${encodeURIComponent(gen)}`);
-  es.addEventListener("hello", () => {           // también tras reconectar: pudo cambiar algo
-    conn.dataset.state = "open";
-    $("conn-text").textContent = "Watching";
-    refreshSoon();
-  });
-  es.addEventListener("tick", refreshSoon);
-  es.addEventListener("reload", () => location.reload());   // la caché se reconstruyó
-  es.onerror = () => { conn.dataset.state = "lost"; $("conn-text").textContent = "Reconnecting"; };
+// Conexión en vivo (design.md §10): tres estados visibles.
+//   open          "Watching"      llegó hello/tick/ping hace < SILENT_MS
+//   reconnecting  "Reconnecting…" error de red o SILENT_MS sin nada; el navegador reintenta
+//   lost          "Disconnected"  > LOST_AFTER_MS sin conexión; sigue reintentando
+const SILENT_MS = 40000;        // el servidor late cada 15 s: 40 s sin nada = conexión muerta
+const LOST_AFTER_MS = 10000;
+const CONN_TEXT = { open: "Watching", reconnecting: "Reconnecting…", lost: "Disconnected · data may be stale" };
+const live = { es: null, gen: null, lastSeen: 0, downSince: 0 };
+
+function setConn(state) {
+  $("conn").dataset.state = state;
+  $("conn-text").textContent = CONN_TEXT[state];
 }
+function connect(gen) {
+  live.gen = gen;
+  live.es?.close();
+  const es = (live.es = new EventSource(`/events?gen=${encodeURIComponent(gen)}`));
+  const alive = () => { live.lastSeen = Date.now(); live.downSince = 0; setConn("open"); };
+  es.addEventListener("hello", () => { alive(); refreshSoon(); });   // tras reconectar: pudo cambiar algo
+  es.addEventListener("tick", () => { alive(); refreshSoon(); });
+  es.addEventListener("ping", alive);
+  es.addEventListener("reload", () => location.reload());          // la caché se reconstruyó
+  es.onerror = () => {
+    live.downSince ||= Date.now();
+    // cada reintento fallido vuelve a llamar aquí: no bajar de "lost" a "reconnecting" (parpadeo)
+    if (Date.now() - live.downSince <= LOST_AFTER_MS) setConn("reconnecting");
+    if (es.readyState === EventSource.CLOSED) setTimeout(() => connect(live.gen), 2000);
+  };
+}
+setInterval(() => {                                    // vigilante
+  if (!live.es) return;
+  const now = Date.now();
+  if ($("conn").dataset.state === "open" && now - live.lastSeen > SILENT_MS) {
+    live.downSince = now;                              // conexión zombi (p. ej. tras suspender)
+    setConn("reconnecting");
+    connect(live.gen);
+  } else if (live.downSince && now - live.downSince > LOST_AFTER_MS) {
+    setConn("lost");
+  }
+}, 1000);
 
 for (const b of document.querySelectorAll("[data-filter]")) b.addEventListener("click", () => setFilter(b.dataset.filter));
 $("live-more").addEventListener("click", () => setFilter("live"));
@@ -211,8 +239,7 @@ setInterval(refreshSoon, 30000);
     const d = await refresh();
     connect(d.generation);
   } catch {                                   // servidor aún arrancando o caído: reintentar
-    $("conn").dataset.state = "lost";
-    $("conn-text").textContent = "Server not reachable, retrying";
+    setConn("lost");
     setTimeout(start, 2000);
   }
 })();

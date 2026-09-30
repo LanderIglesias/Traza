@@ -52,7 +52,30 @@ class Hub:
         self.publish(None)
 
 
-def create_app(db_path, root, port: int, interval: float = 0.5) -> FastAPI:
+async def sse_stream(hub: Hub, requested_gen, current_gen, heartbeat: float, is_disconnected):
+    """Eventos SSE para un navegador (design.md §10): hello, tick, ping (latido con nombre, que el
+    cliente sí ve: un comentario ': ping' es invisible para EventSource) y reload."""
+    if requested_gen is not None and requested_gen != current_gen:
+        yield "event: reload\ndata: {}\n\n"  # la caché se reconstruyó: recargar entero
+        return
+    q = hub.subscribe()
+    try:
+        yield f"event: hello\ndata: {json.dumps({'gen': current_gen})}\n\n"
+        while not await is_disconnected():
+            try:
+                msg = await asyncio.wait_for(q.get(), timeout=heartbeat)
+            except TimeoutError:
+                yield "event: ping\ndata: {}\n\n"
+                continue
+            if msg is None:  # el servidor se apaga
+                return
+            yield f"id: {msg['id']}\nevent: tick\ndata: {json.dumps(msg)}\n\n"
+    finally:
+        hub.unsubscribe(q)
+
+
+def create_app(db_path, root, port: int, interval: float = 0.5,
+               heartbeat: float = HEARTBEAT_S) -> FastAPI:
     db_path = Path(db_path)
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
     allowed_origins = {f"http://{h}" for h in allowed_hosts}
@@ -115,25 +138,8 @@ def create_app(db_path, root, port: int, interval: float = 0.5) -> FastAPI:
 
     @app.get("/events")
     async def events(request: Request, gen: str | None = None):
-        async def stream():
-            if gen is not None and gen != state["generation"]:
-                yield "event: reload\ndata: {}\n\n"  # la caché se reconstruyó: recargar entero
-                return
-            q = hub.subscribe()
-            try:
-                yield f"event: hello\ndata: {json.dumps({'gen': state['generation']})}\n\n"
-                while not await request.is_disconnected():
-                    try:
-                        msg = await asyncio.wait_for(q.get(), timeout=HEARTBEAT_S)
-                    except TimeoutError:
-                        yield ": ping\n\n"
-                        continue
-                    if msg is None:  # el servidor se apaga
-                        return
-                    yield f"id: {msg['id']}\nevent: tick\ndata: {json.dumps(msg)}\n\n"
-            finally:
-                hub.unsubscribe(q)
-        return StreamingResponse(stream(), media_type="text/event-stream",
+        stream = sse_stream(hub, gen, state["generation"], heartbeat, request.is_disconnected)
+        return StreamingResponse(stream, media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache"})
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")

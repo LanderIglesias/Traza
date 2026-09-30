@@ -37,6 +37,14 @@ def session_state(agent_states, idle_for_s: float) -> str:
     return max(agent_states, key=_RANK.__getitem__, default="idle")
 
 
+def _parse_ts(ts: str | None) -> datetime | None:
+    """Timestamp ISO-8601 del JSONL ("…Z") a datetime con zona; None si falta o no se entiende."""
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return None
+
+
 def _iso(mtime_ns: int) -> str:
     return datetime.fromtimestamp(mtime_ns / 1e9, timezone.utc).isoformat(timespec="seconds")
 
@@ -91,7 +99,8 @@ def overview(conn, now: float | None = None) -> dict:
 
     # coste: cada petición cuenta una vez, en su sesión dueña (§6.2); None = sin precio
     owner = db.owners(conn)
-    cost = {r.request_id: request_cost(r) for r in db.requests(conn)}
+    reqs = db.requests(conn)
+    cost = {r.request_id: request_cost(r) for r in reqs}
     for s in sessions.values():
         s.update(cost=0.0, unpriced=0, inherits=[])
     for rid, c in cost.items():
@@ -130,11 +139,25 @@ def overview(conn, now: float | None = None) -> dict:
             live_sessions += 1
             active_agents += sum(st != "idle" for st in states.get(sid, []))
 
+    # "Cost today": peticiones desde la medianoche LOCAL de `now` (cada una una vez, como la ventana)
+    midnight = datetime.fromtimestamp(now).astimezone().replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    today = {"cost": 0, "unpriced": 0}
+    for r in reqs:
+        ts = _parse_ts(r.timestamp)
+        if ts is not None and ts >= midnight:
+            c = cost[r.request_id]
+            if c is None:
+                today["unpriced"] += 1
+            else:
+                today["cost"] += c
+
     ignored = db.ignored_counts(conn)
     priced = [c for c in cost.values() if c is not None]
     return {
         "generation": db.generation(conn),
         "window": {"cost": sum(priced), "unpriced": len(cost) - len(priced)},
+        "today": today,
         "counts": {"live_sessions": live_sessions, "active_agents": active_agents,
                    "sessions": len(sessions)},
         "health": {"unknown": conn.execute(

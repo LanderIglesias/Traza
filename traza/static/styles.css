@@ -93,7 +93,9 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
 .conn .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
 .conn[data-state="open"] .dot { background: #1f9d55; box-shadow: 0 0 0 4px rgb(31 157 85 / 0.15); }
-.conn[data-state="lost"] .dot { background: var(--err); }
+.conn[data-state="reconnecting"] .dot { background: #d98a00; box-shadow: 0 0 0 4px rgb(217 138 0 / 0.15); }
+.conn[data-state="lost"] .dot { background: var(--err); box-shadow: 0 0 0 4px rgb(180 35 24 / 0.15); }
+.conn[data-state="lost"] { color: var(--err); font-weight: 700; }
 
 /* --- tarjetas ------------------------------------------------------------------------------- */
 .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); }

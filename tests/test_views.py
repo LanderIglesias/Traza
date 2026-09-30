@@ -119,3 +119,14 @@ def test_subagente_interrumpido_no_deja_la_sesion_en_tool_para_siempre(conn, tmp
     scan(conn, tmp_path / "projects")
     a = next(s for s in views.overview(conn)["sessions"] if s["id"] == "sess-A")
     assert (a["state"], a["activity"]) == ("idle", None)
+
+
+def test_coste_de_hoy_en_hora_local(conn):
+    # Tarjeta "Cost today" (sustituye a "Live sessions", que repetía la tarjeta coral).
+    # Las peticiones de la fixture son del 2026-01-01 ~10:00Z; "hoy" = el día local de `now`.
+    from datetime import datetime, timezone
+    same_day = datetime(2026, 1, 1, 10, 30, tzinfo=timezone.utc).timestamp()
+    assert views.overview(conn, now=same_day)["today"] == {
+        "cost": pytest.approx(0.001223), "unpriced": 0}
+    next_day = same_day + 86400
+    assert views.overview(conn, now=next_day)["today"] == {"cost": 0, "unpriced": 0}

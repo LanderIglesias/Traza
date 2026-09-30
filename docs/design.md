@@ -433,6 +433,9 @@ Decisiones de F3 (revisión del brief, 30-09-2026):
   una selección). Orden: última actividad.
 - **Barra de salud del parser:** franja fina a ancho completo, fija abajo, siempre visible; no es
   una tarjeta más.
+- **Tarjeta "Cost today"** (revisión de F3): sustituye a "Live sessions", que repetía el "1" de la
+  tarjeta coral. Coste estimado de las peticiones desde la medianoche **local**, cada una una vez;
+  con "+" si alguna no tiene precio.
 - **Barra lateral:** empieza con **un solo icono** (Sessions). Cada vista añade el suyo cuando
   existe (Agents en F4, Signals y Parser health en F6).
 - **Tabla de sesiones:** título (+ proyecto en segunda línea, + badges de señal), estado, coste
@@ -533,9 +536,24 @@ queda ninguna, el test se salta con ese motivo. Las copias (sesiones que compart
 - Cada evento lleva `id:` (el `events.id`) y la `cache_generation`; el cliente se conecta a
   `/events?gen=…`. Si la generación no coincide (la BD se reconstruyó), el cliente recarga en vez
   de reanudar desde `Last-Event-ID`.
-- Heartbeat `: ping` cada 15 s.
+- Latido cada 15 s (evento `ping`, ver abajo).
 - Cola por cliente con tamaño máximo; si se llena, se descarta lo más viejo; nunca se bloquea
   al watcher.
+
+- **Latido con nombre (`event: ping`)**, no un comentario: `EventSource` no expone los comentarios
+  al JS, así que el cliente no podría detectar una conexión muerta (portátil suspendido, proxy
+  que corta sin cerrar). Cada 15 s.
+- **Indicador de conexión, tres estados** [probado en Chrome parando y arrancando el servidor]:
+
+  | Estado | Cuándo | Aspecto |
+  |---|---|---|
+  | `open` "Watching" | llegó `hello`, `tick` o `ping` hace < 40 s | punto verde |
+  | `reconnecting` "Reconnecting…" | error de red, o 40 s sin ningún evento; el navegador reintenta | punto ámbar |
+  | `lost` "Disconnected · data may be stale" | > 10 s sin conexión; sigue reintentando, sin volver a ámbar | punto rojo |
+
+  Medido: servidor parado → ámbar en ~3 s → rojo 10 s después, sin parpadeo; servidor de vuelta →
+  verde en ~2,5 s y sin recargar la página (misma generación). Tras reconectar se refrescan los
+  datos (`hello` → refresco), porque pudo cambiar algo mientras tanto.
 
 ## 11. Riesgos
 
