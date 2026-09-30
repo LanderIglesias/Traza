@@ -44,8 +44,8 @@ micro-dollar — and honest about what it does not know: `?` instead of invented
 - Thinking text is empty on disk: the panel shows actions and results, not reasoning.
 - Content from transcripts is untrusted: always rendered as text (`textContent`), never HTML.
 - UI language: **English**.
-- Undecided before F3: how a session with inherited requests shows its cost (docs/design.md §7,
-  option (a) recommended).
+- A session that inherits requests from another shows its own cost large and, small and grey,
+  "inherits N requests from <session> (+$X)" (docs/design.md §7, option (a)).
 
 ## Brand Commitments
 
@@ -55,7 +55,9 @@ micro-dollar — and honest about what it does not know: `?` instead of invented
   navigation, slim left icon rail, one coral/red gradient accent card and one black feature
   card, sparklines, a table with coloured status pills (failed red / successful green / pending
   orange), geometric sans type, big bold numbers. The image itself is third-party and is not
-  stored in the repo.
+  stored in the repo. The consumer-fintech look is a deliberate choice by the author ("Visualmente me
+  gustaría que fuese como el ejemplo"), a differentiator from dark terminal-style dev tools. Its
+  weight is adapted: here figures are context, the work panel (agent tree, judgement) leads.
 
 ## Evidence on Hand
 

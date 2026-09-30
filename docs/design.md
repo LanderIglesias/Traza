@@ -354,33 +354,78 @@ disponible"**, un único estado de error.
 
 ## 7. Interfaz
 
+**traza es un navegador, no un dashboard de estado.** La referencia visual del autor (PRODUCT.md,
+estilo fintech claro, elegido deliberadamente por el autor el 30-09-2026) pone el peso en
+tarjetas de cifras; aquí las cifras son **contexto** y el peso está en el panel de trabajo
+(árbol + juicio). Por eso la fila de tarjetas es baja y el panel de trabajo existe y ocupa su
+sitio **desde F3**, aunque en F3 solo muestre el resumen de la sesión.
+
 ```
-┌ Sesiones ──────────┬ Árbol de agentes ─────────────┬ Vista de juicio ──────────────┐
-│ ● CV update  $1.92 │ ▼ main      inactivo  $0.40   │ ENCARGO                       │
-│ ○ joblens    $0.15 │   ├ Explore ✓        $0.31    │ turno 3 ▸ (plegado)           │
-│                    │   ├ marketing ⚙ Bash $1.21    │ 14:02 Read cv.md       ✓      │
-│                    │   │   ⚠ reintento fallido     │ 14:03 Bash pytest      ✗      │
-│                    │   └ reviewer ✓       $0.00    │ RESULTADO devuelto al padre   │
-└────────────────────┴───────────────────────────────┴───────────────────────────────┘
- salud del parser: N unknown · M tipos ignorados (K líneas) · coste interno no desglosado
+┌──┬ traza   [ Live | All ] ───────────────────────────────────────────────────────────────┐
+│▣ │ ┌ $412.30 est. ─────┐ ┌ ● Live now ─────────────────────┐ ┌ 2 ────┐ ┌ 5 ─────┐       │
+│  │ │ last 30 days      │ │ CV update · Explore · Bash 12s │ │active │ │agents  │  (bajas)│
+│  │ └───────────────────┘ └ +2 more ─────────────────────────┘ └───────┘ └────────┘       │
+│  │ ┌ Sessions ──────────────────────┐ ┌ Panel de trabajo ─────────────────────────────┐ │
+│  │ │ CV update  ⚠2   ● tool   $1.92 │ │ F3: resumen de la sesión seleccionada         │ │
+│  │ │  cv-project           2m ago   │ │ F4: árbol de agentes · F5: vista de juicio    │ │
+│  │ │ joblens         ○ idle   $0.15 │ │ (≈60 % del ancho, alto completo)              │ │
+│  │ │  +inherits 1,274 from 7bc0…    │ │                                               │ │
+│  │ └────────────────────────────────┘ └───────────────────────────────────────────────┘ │
+├──┴───────────────────────────────────────────────────────────────────────────────────────┤
+│ parser health: 0 unknown · 54,915 ignored (14 types) · internal cost not broken down    │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Sesiones:** vivas arriba; título, proyecto, estado, coste estimado, última actividad.
-- **Coste de una sesión con peticiones heredadas** (§6.2). **Decisión pendiente antes de F3.**
-  Hay tres opciones y los datos permiten cualquiera de ellas:
-  - (a) coste propio en grande y, en pequeño y gris, "hereda N peticiones de <sesión> (+$X)"
-    (**recomendada**: la más honesta);
-  - (b) solo el coste propio, con un icono de cadena y un tooltip;
-  - (c) propio + heredado junto con un aviso. El riesgo de (c) es que la suma de las sesiones
-    ya no cuadra con el total.
+Decisiones de F3 (revisión del brief, 30-09-2026):
+
+- **Jerarquía:** fila de tarjetas **baja** (una línea de cifra + etiqueta). Debajo, dos columnas a
+  alto completo: tabla de sesiones (≈40 %) y **panel de trabajo** (≈60 %), reservado desde F3.
+  En móvil/estrecho, una columna: tarjetas, sesiones, panel.
+- **Estado y señal son dos cosas y van separadas:**
+  - *Estado* (§7.1, a nivel de sesión = el de su agente más activo): `tool` (herramienta en
+    vuelo), `thinking`, `idle`. Pastilla en colores **neutros** (azul, azul violáceo, gris). Nunca
+    rojo ni coral.
+  - *Señales* (§7.2): badges rojos pequeños junto al título, con el número; al pulsar llevan a
+    los eventos. En F3 solo existen las que no requieren análisis: errores de herramienta
+    (`is_error`) y `api_error`. Bucles y reintentos llegan en F6.
+  - Así la tabla puede decir "idle, pero con 2 errores".
+- **Sesión "viva"** = algún fichero suyo modificado hace < 2 min, **o** herramienta en vuelo hace
+  < 10 min (umbral de "colgada", §7.2). Constantes en un solo sitio.
+- **Tarjeta "Live now" (coral):** la sesión viva más reciente: título, agente activo, herramienta
+  y cuánto lleva. Con **2+ vivas**: la más reciente + "+N more", que al pulsar activa el filtro
+  `Live`. Con **0 vivas**: no se queda un hueco gris; pasa a tono neutro con "Last active:
+  <título> · hace N min". Sin sparkline en F3 (necesita agregación y dibujo propio; se decide en
+  F4 con datos por agente).
+- **Tarjeta negra (coste de la ventana):** suma de lo que tiene precio. Si alguna petición no
+  tiene precio (`?`), la cifra lleva un **"+"** y una línea "N requests unpriced, not included";
+  nunca se presenta un parcial como total. Hoy: 0 peticiones sin precio en disco [verificado].
+  Siempre con la etiqueta *estimated*.
+- **Píldoras `Live | All`:** solo filtran la **tabla**; el resto de la pantalla no cambia. `All` =
+  todo lo que hay en disco (ya es la ventana de 30 días: no se llama "Last 30 days" porque no es
+  una selección). Orden: última actividad.
+- **Barra de salud del parser:** franja fina a ancho completo, fija abajo, siempre visible; no es
+  una tarjeta más.
+- **Barra lateral:** empieza con **un solo icono** (Sessions). Cada vista añade el suyo cuando
+  existe (Agents en F4, Signals y Parser health en F6).
+- **Tabla de sesiones:** título (+ proyecto en segunda línea, + badges de señal), estado, coste
+  estimado, última actividad. **Sin columna de modelo**: 4 de 57 sesiones usan 2–3 modelos
+  [verificado]; los modelos van al panel de trabajo con su número de peticiones.
+- **Coste de una sesión con peticiones heredadas** (§6.2) — **decidido: opción (a).** Coste
+  propio en grande y debajo, pequeño y gris, "inherits N requests from <sesión> (+$X)". Las
+  sumas cuadran y el dato heredado no se esconde.
+- **Clic en una sesión (F3):** la fila queda seleccionada y el panel de trabajo muestra su
+  resumen: título, proyecto, inicio, última actividad, modelos (con nº de peticiones), coste
+  propio y heredado, nº de agentes. F4 sustituye ese resumen por el árbol.
+- **Tipografía:** Manrope (OFL), servida desde `static/` con su `OFL.txt`; ninguna petición a
+  CDNs ni a Google Fonts (100 % local).
+- **Idioma de la interfaz:** inglés.
+
 - **Árbol:** colapsable; el estado de colapsado vive en memoria del JS y los ticks SSE no lo
   resetean. Coste: **propio en grande**; en nodos con hijos, **acumulado pequeño en gris**.
   Columna ordenable **coste por token de salida**.
 - **Vista de juicio:** encargo arriba, timeline de herramientas en medio, resultado devuelto al
   padre abajo. Agrupada por turno, turnos cerrados plegados, últimos 50 turnos + "cargar
   anteriores" (sin virtual scrolling en v1).
-- **Barra de salud del parser:** global, siempre visible.
-
 ### 7.1 Estados de agente
 
 | Estado | Regla | Tipo |
