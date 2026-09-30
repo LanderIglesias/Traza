@@ -125,7 +125,12 @@ function renderRows(d) {
   if (focusedId) $("rows").querySelector(`[data-id="${CSS.escape(focusedId)}"]`)?.focus();
 }
 
+// Respuestas que llegan desordenadas (clic + tick + refresco de 30 s): solo pinta la última pedida.
+let panelSeq = 0;
+let refreshSeq = 0;
+
 async function renderPanel() {
+  const seq = ++panelSeq;
   const body = $("panel-body");
   if (!ui.selected) {
     body.hidden = true;
@@ -134,13 +139,13 @@ async function renderPanel() {
   }
   const wanted = ui.selected;
   const r = await fetch(`/api/sessions/${encodeURIComponent(wanted)}`);
-  if (wanted !== ui.selected) return;   // otro clic llegó antes: no pintar una sesión vieja
+  if (seq !== panelSeq) return;   // llegó una petición más nueva: no pintar datos viejos
   if (!r.ok) {                     // la sesión desapareció del disco (limpieza de 30 días)
     ui.selected = null;
     return renderPanel();
   }
   const s = await r.json();
-  if (wanted !== ui.selected) return;
+  if (seq !== panelSeq) return;
   $("panel-empty").hidden = true;
   body.hidden = false;
   $("p-title").textContent = titleOf(s);
@@ -174,8 +179,11 @@ function setFilter(f) {
 // --- datos en vivo -----------------------------------------------------------------------------
 let pending = null;
 async function refresh() {
+  const seq = ++refreshSeq;
   const r = await fetch("/api/overview");
-  ui.data = await r.json();
+  const data = await r.json();
+  if (seq !== refreshSeq) return ui.data;   // una más nueva ya pintó (o pintará)
+  ui.data = data;
   renderCards(ui.data);
   renderRows(ui.data);
   if (ui.selected) renderPanel();

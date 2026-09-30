@@ -186,3 +186,12 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
   y la API (5 medidas, con un servidor sobre carpeta temporal para no ensuciar el historial).
 - Pantalla verificada en Chrome a 1440×900 y 390×844 (emulación móvil): sin desbordamiento
   horizontal (`scrollWidth` = 390), consola sin errores, detector de impeccable sin hallazgos.
+- **Revisión de código del commit F3** (`8cf0d49`, más `1b58922`): 6 fallos, corregidos con test
+  visto fallar: un `timestamp` sin zona tumbaba `/api/overview` (500); la medianoche local se
+  desplazaba una hora en los días de cambio de hora; al apagar con una pestaña abierta uvicorn
+  esperaba 3 s y registraba un ERROR (los streams SSE se cierran ahora al recibir la señal, antes
+  de que uvicorn espere a las conexiones); el navegador se abría aunque el servidor no llegara a
+  arrancar; respuestas desordenadas de la misma sesión podían pintar un estado viejo; una
+  etiqueta `<command-name>` en medio de un prompt humano lo reclasificaba como comando local
+  (1 caso en disco). Indicador de conexión probado en Chrome: verde → ámbar (~3 s) → rojo
+  (+10 s) → verde (~2,5 s tras volver el servidor, sin recargar).

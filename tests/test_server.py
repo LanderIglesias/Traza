@@ -146,3 +146,35 @@ def test_sse_latido_tick_y_cierre():
     assert ping == "event: ping\ndata: {}\n\n"
     assert tick.startswith("id: 7\nevent: tick")
     assert left == 0                                          # se desuscribió al terminar
+
+
+def test_apagar_con_una_pestana_abierta_no_espera_al_timeout(tmp_path):
+    # uvicorn espera a que terminen las conexiones ANTES del shutdown del lifespan: los streams
+    # SSE tienen que cerrarse al recibir la señal, no después (si no: 3 s y un ERROR en consola).
+    import signal
+    import threading
+    import time
+    import httpx
+    root = tmp_path / "projects"
+    root.mkdir()
+    port = 7431
+    srv = server.make_server(server.create_app(tmp_path / "t.db", root, port=port), port)
+    th = threading.Thread(target=srv.run, daemon=True)
+    th.start()
+    for _ in range(100):
+        if srv.started:
+            break
+        time.sleep(0.05)
+    got_hello = threading.Event()
+
+    def listen():
+        with httpx.stream("GET", f"http://127.0.0.1:{port}/events", timeout=10) as r:
+            for line in r.iter_lines():
+                if line.startswith("event: hello"):
+                    got_hello.set()
+    threading.Thread(target=listen, daemon=True).start()
+    assert got_hello.wait(5)
+    t0 = time.perf_counter()
+    srv.handle_exit(signal.SIGINT, None)
+    th.join(10)
+    assert not th.is_alive() and time.perf_counter() - t0 < 2.0

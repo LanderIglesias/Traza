@@ -103,9 +103,11 @@ def _prompt_origin(d: dict, content) -> str | None:
                         if isinstance(b, dict) and isinstance(b.get("text"), str))
     else:
         text = ""
-    if text.lstrip().startswith("[Request interrupted"):
+    head = text.lstrip()
+    if head.startswith("[Request interrupted"):
         return "interrupted"
-    if "<local-command-stdout>" in text or "<command-name>" in text:
+    # solo si la línea EMPIEZA así: un prompt humano que las contiene (texto pegado) es humano
+    if head.startswith(("<local-command-stdout>", "<command-name>")):
         return "local-command"
     if d.get("isMeta"):
         return "meta"

@@ -98,3 +98,10 @@ def test_prompts_que_el_modelo_nunca_contesta_tienen_su_origen():
     assert origin("<local-command-stdout>Set model to opus</local-command-stdout>") == "local-command"
     assert origin("<command-name>/cost</command-name>", isMeta=True) == "local-command"
     assert origin("texto de una skill", isMeta=True) == "meta"      # este sí lo contesta (92 %)
+
+
+def test_command_name_solo_cuenta_al_principio():
+    # Un prompt humano que CONTIENE la etiqueta (texto pegado) sigue siendo del usuario.
+    p = parse_line(line(type="user", uuid="u", timestamp="t", origin={"kind": "human"},
+                        message={"role": "user", "content": "mira esto: <command-name>/x</command-name>"}))
+    assert p.events[0].origin == "human"

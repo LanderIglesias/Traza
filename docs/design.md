@@ -302,8 +302,9 @@ NULL en el hilo principal **no** significa "del usuario" ni "encargo".
 
 Desde F3 el parser distingue además dos orígenes que el modelo **no contesta** (cuentan para el
 autómata de estado, §7): `interrupted` (texto que empieza por "[Request interrupted") y
-`local-command` (contiene `<local-command-stdout>` o `<command-name>`), con prioridad sobre
-`isMeta`.
+`local-command` (la línea **empieza** por `<local-command-stdout>` o `<command-name>`; un prompt
+humano que solo las contiene, p. ej. texto pegado, sigue siendo `human`), con prioridad sobre
+`isMeta`. En disco las 20 líneas que empiezan así tienen `origin` vacío, ninguna `human`.
 
 ### 6.4 Contrato de la caché
 

@@ -3,6 +3,8 @@ import argparse
 import socket
 import sys
 import threading
+import time
+import urllib.request
 import webbrowser
 from pathlib import Path
 
@@ -39,17 +41,28 @@ def main(argv=None) -> int:
                   file=sys.stderr)
             return 1
 
-    import uvicorn
-    from .server import create_app
+    from .server import create_app, make_server
 
     url = f"http://127.0.0.1:{args.port}"
     print(f"traza on {url}  (cache: {args.db}, reading: {args.root})")
-    if not args.no_open:  # cuando el servidor ya escucha, no antes
-        threading.Timer(1.0, webbrowser.open, args=(url,)).start()
-    # Solo 127.0.0.1: el panel nunca escucha en la red (design.md §9).
-    uvicorn.run(create_app(args.db, args.root, port=args.port), host="127.0.0.1",
-                port=args.port, log_level="warning", timeout_graceful_shutdown=3)
+    if not args.no_open:
+        threading.Thread(target=_open_when_ready, args=(url,), daemon=True).start()
+    make_server(create_app(args.db, args.root, port=args.port), args.port).run()
     return 0
+
+
+def _open_when_ready(url: str, tries: int = 50) -> None:
+    """Abre el navegador solo cuando el panel responde: si el servidor no llega a arrancar
+    (caché ajena, puerto perdido), no se abre una pestaña contra nada."""
+    for _ in range(tries):
+        try:
+            with urllib.request.urlopen(url + "/api/overview", timeout=1) as r:
+                if r.status == 200:
+                    webbrowser.open(url)
+                    return
+        except OSError:
+            pass
+        time.sleep(0.2)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+import uvicorn
 
 from . import db, views
 from .watcher import watch
@@ -50,6 +51,23 @@ class Hub:
         """Al apagar: None dice a cada stream SSE que termine (si no, Ctrl+C espera a que el
         navegador cierre la pestaña)."""
         self.publish(None)
+
+
+def make_server(app: FastAPI, port: int) -> uvicorn.Server:
+    """Servidor uvicorn solo en 127.0.0.1 (§9) que, al recibir la señal de salida, cierra
+    PRIMERO los streams SSE: uvicorn espera a que terminen las conexiones antes de ejecutar el
+    shutdown del lifespan, así que cerrarlos ahí llegaría tarde (3 s de espera y un ERROR)."""
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning",
+                            timeout_graceful_shutdown=3)
+
+    class _Server(uvicorn.Server):
+        def handle_exit(self, sig, frame):
+            loop = getattr(app.state, "loop", None)
+            if loop is not None and not loop.is_closed():
+                loop.call_soon_threadsafe(app.state.hub.close)  # la cola no es segura entre hilos
+            super().handle_exit(sig, frame)
+
+    return _Server(config)
 
 
 async def sse_stream(hub: Hub, requested_gen, current_gen, heartbeat: float, is_disconnected):
@@ -96,6 +114,7 @@ def create_app(db_path, root, port: int, interval: float = 0.5,
             with closing(db.connect(db_path)) as conn:
                 return db.generation(conn)
         state["generation"] = await asyncio.to_thread(generation)
+        app.state.loop = asyncio.get_running_loop()   # para cerrar el hub desde la señal
         task = asyncio.create_task(watch(db_path, root, interval, on_tick))
         yield
         hub.close()
@@ -103,6 +122,7 @@ def create_app(db_path, root, port: int, interval: float = 0.5,
         await asyncio.gather(task, return_exceptions=True)  # espera a que suelte su conexión
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.hub = hub
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
