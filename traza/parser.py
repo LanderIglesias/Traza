@@ -13,7 +13,7 @@ from typing import NamedTuple
 IGNORED_TYPES = frozenset({
     "attachment", "queue-operation", "last-prompt", "mode", "file-history-snapshot",
     "file-history-delta", "bridge-session", "atis-latch", "frame-link",
-    "artifact-comment-monitor", "artifact-autoreact-ledger", "cost-state",
+    "artifact-comment-monitor", "artifact-autoreact-ledger",
 })
 SHOWN_SYSTEM_SUBTYPES = frozenset({"api_error", "compact_boundary"})
 
@@ -71,6 +71,9 @@ class Parsed:
     title: str | None = None
     ignored: str | None = None  # tipo (o "system:<subtipo>") si la línea se ignora
     timestamp: str | None = None  # de cualquier línea, también las ignoradas (inicio de sesión)
+    # cost-state: (startTime en ms, {modelo: costUSD}) — gasto del proceso, incluidas las
+    # llamadas internas de Claude Code que no se escriben como peticiones (coste interno)
+    cost_state: tuple[int, dict[str, float]] | None = None
 
 
 def input_hash(obj) -> str:
@@ -149,6 +152,14 @@ def _parse(d) -> Parsed:
     if not isinstance(d, dict):
         raise TypeError("la línea no es un objeto")
     t, uuid, ts = d.get("type"), _str(d.get("uuid")), _str(d.get("timestamp"))
+    if t == "cost-state":
+        mu, start = d.get("modelUsage"), _int(d.get("startTime"))
+        if not isinstance(mu, dict) or start is None:
+            return Parsed(ignored="cost-state")       # forma rara: no se inventa una medida
+        return Parsed(cost_state=(start, {
+            m: float(v["costUSD"]) for m, v in mu.items()
+            if isinstance(m, str) and isinstance(v, dict)
+            and type(v.get("costUSD")) in (int, float)}))
     a = d.get("attachment")
     if (t == "attachment" and isinstance(a, dict) and a.get("type") == "queued_command"
             and a.get("commandMode") == "task-notification"):

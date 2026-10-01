@@ -69,8 +69,13 @@ argumentos, resultados), que es lo que hace falta para juzgar calidad.
 - El campo `apiBlockIndex` solo existe en algunas versiones (sí en la extensión 2.1.267, no en la
   CLI 2.1.226) [verificado]: el parser no depende de él.
 - Las llamadas internas de Claude Code (p. ej. a Haiku para títulos) **no aparecen** en el JSONL
-  [verificado: 15.777 tokens de Haiku en `cost-state`, 0 en el JSONL]. Se muestran como
-  "coste interno no desglosado" cuando se puede calcular la diferencia.
+  [verificado: 15.777 tokens de Haiku en `cost-state`, 0 en el JSONL]. **Se miden** (F6, revisión):
+  las líneas `cost-state` se guardan (`cost_states`); coste interno = `costUSD` de los modelos
+  que un `cost-state` registra y que esa sesión **nunca** usa en una petición (del último
+  `cost-state` de cada proceso: es acumulado). La barra de salud lo muestra **solo si hay algo
+  medido**, con la cifra ("internal cost measured: $0.02 in 2 sessions"); si no, calla. En disco:
+  $0,019 en 2 sesiones (0,88 % y 0,66 % del gasto de cada una; 0,03 % de todo lo que cubren los
+  `cost-state`). Las sesiones sin `cost-state` no se pueden medir, y así se dice.
 
 ### 4.2 Opcional v1.x: hooks HTTP
 
@@ -506,6 +511,20 @@ Reglas detalladas y su evidencia: §7, "Sesión viva".
 
 El agente principal nunca está "terminado": está "inactivo".
 
+**Una sola regla para el principal y los subagentes, aunque escriben distinto** (revisión de
+F6). La regla mira la **última línea** de cada agente, no si su fichero cambió hace poco:
+- *Principal (2.1.284):* escribe cada respuesta **de golpe al terminarla**. Su línea de texto
+  intermedia ya lleva `stop_reason = "tool_use"` (159/159) y la final `end_turn` (35/35): un
+  principal que acaba de terminar pasa a `idle` **al instante**, nunca por la gracia de 30 s.
+  Mientras genera no escribe nada; su última línea es un `tool_result` o un prompt → `thinking`,
+  que es lo que está pasando.
+- *Subagente (2.1.284):* escribe **mientras genera**; su texto intermedio lleva `stop_reason`
+  null (6/6). Esa es la única razón de la gracia de 30 s: sin ella parpadeaba `idle` entre la
+  línea de texto y la de la herramienta (F4).
+Así, "pensando" significa lo mismo en los dos: el modelo tiene el turno. Si algún día se ve
+`thinking` en un principal parado más de 30 s tras un texto, es que su versión volvió a escribir
+`stop_reason` null al terminar (como ≤ 2.1.268): volver a medir.
+
 **Estas reglas dependen de la versión de Claude Code.** El formato del JSONL no está
 documentado y ha cambiado dentro de la 2.1.x: `stop_reason` null al terminar (≤ 2.1.268), la
 línea de texto de un subagente escrita antes que su herramienta (2.1.284), la notificación de
@@ -526,7 +545,8 @@ Los umbrales viven en un solo bloque de constantes.
 | Bucle | la misma llamada (herramienta + hash del JSON canónico del input) **3 veces seguidas** (ninguna otra llamada del agente entre medias), todas sin error. Una alerta por racha. "3 veces en cualquier sitio" daba 90 alertas, casi todas legítimas (relecturas, `pytest` repetidos, capturas); "seguidas" da 2, las dos bucles de verdad | sí |
 | Reintento que también falló | error real → **siguiente uso de la misma herramienta** (con cualquier input) **en una respuesta posterior** → error real. Dos llamadas de la misma respuesta no son un reintento: si una falla, Claude Code cancela las otras y también las registra como error (revisión de F6: quitaba 2 falsos de 37). Un bloqueo no cuenta como error aquí: bloquear y repetir es el flujo normal de un hook. 35; revisadas 8 al azar: todas agentes atascados de verdad | sí |
 | Reintento que funcionó | igual, con éxito. 197 | no (gris) |
-| Herramienta colgada | herramienta en vuelo según §7.1 (de la **última** respuesta, sin resultado y sin prompt posterior) desde hace > 10 min, **excepto** si es el `tool_use` que lanzó un subagente cuyo fichero se escribió hace < 10 min (trabaja, no está colgada), o si el agente está `done` ("terminado" manda, §7.1: lo que dejó sin resultado está abandonado). 0–1 en disco | sí |
+| Herramienta colgada | herramienta en vuelo según §7.1 (de la **última** respuesta, sin resultado y sin prompt posterior) desde hace > 10 min **y la sesión ha escrito algo en los últimos 30 min**; **excepto** el `tool_use` que lanzó un subagente cuyo fichero se escribió hace < 10 min (trabaja), un agente `done` (§7.1: lo suyo está abandonado) y las herramientas que esperan al usuario (`AskUserQuestion`, `ExitPlanMode`: en disco, hasta 115 min esperando una respuesta). La única herramienta de más de 10 min que no espera a nadie es `Bash` en su tope de 10 min | sí |
+| Sin terminar | lo mismo, pero la sesión lleva **> 30 min** sin escribir nada: no es un atasco de ahora, la sesión terminó con la herramienta a medias. **Heurística:** el JSONL no dice si Claude Code sigue en marcha (una herramienta atascada y una sesión cerrada dejan el mismo rastro); 30 min = 3× la herramienta más larga que no espera al usuario | no (gris) |
 | Coste por token de salida | columna ordenable del árbol (F4) | no |
 
 Implementación: `traza/signals.py`, funciones puras con los umbrales en un bloque de
@@ -649,7 +669,7 @@ queda ninguna, el test se salta con ese motivo. Las copias (sesiones que compart
 | Claude Code cambia el formato JSONL | panel roto o números falsos | parser tolerante, `unknown` visible, tests, `parser_version` |
 | Discrepancia del oráculo en `3416476c` (`cost-state` habla de `claude-opus-5-5`, el JSONL solo tiene `claude-opus-5` y otras cifras) | el oráculo no es fiable en sesiones copiadas | [verificado] `3416476c` es copia de `7bc000bb`. Las sesiones copia se excluyen del test oráculo (§8) |
 | Precios desactualizados | coste estimado erróneo | `prices.toml` editable, `?` para modelos desconocidos, etiqueta "estimado" |
-| Llamadas internas no visibles en JSONL | coste inferior al real | mostrar "coste interno no desglosado" |
+| Llamadas internas no visibles en JSONL | coste inferior al real | medirlas con `cost-state` donde existe y mostrar la cifra; donde no, no se puede medir (y se dice). En disco: 0,03 % |
 | Rendimiento de `stat()` en Windows con antivirus | CPU / latencia | medir; subir intervalo si hace falta |
 | Datos personales en fixtures o capturas del GIF | fuga de información | fixtures sintéticas; revisar el GIF antes de publicar |
 

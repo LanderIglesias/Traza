@@ -75,10 +75,12 @@ def test_overview_sobre_la_fixture(conn):
     # la ventana suma cada petición una vez (req_1 no se cuenta dos veces)
     assert ov["window"] == {"cost": pytest.approx(0.001223), "unpriced": 0}
     assert ov["counts"] == {"live_sessions": 1, "active_agents": 1, "sessions": 2}
-    assert ov["health"] == {"unknown": 1, "ignored": 4, "ignored_types": 4, "implausible": 0,
+    # cost-state ya no se ignora: de él sale el coste interno (aquí vacío: nada medido)
+    assert ov["health"] == {"unknown": 1, "ignored": 3, "ignored_types": 3, "implausible": 0,
+                            "internal_cost": None,
                             # desglose para la barra de salud (F6), de más a menos
-                            "ignored_by_type": {"attachment": 1, "cost-state": 1,
-                                                "queue-operation": 1, "system:stop_hook_summary": 1}}
+                            "ignored_by_type": {"attachment": 1, "queue-operation": 1,
+                                                "system:stop_hook_summary": 1}}
     assert ov["generation"] == db.generation(conn)
     # orden: última actividad primero (ISO-8601, comparable como texto)
     acts = [s["last_activity"] for s in ov["sessions"]]
@@ -425,3 +427,18 @@ def test_agent_en_vuelo_con_hijo_que_escribe_no_esta_colgado(tmp_path):
     os.utime(sub, (old, old))
     scan(c, tmp_path / "projects")
     assert _nodes(c)["main"]["signals"].get("hung") == 1
+
+
+def test_coste_interno_solo_cuando_es_medible(conn, tmp_path):
+    # La fixture tiene un cost-state vacío: no hay nada medido → silencio, no una nota fija
+    assert views.overview(conn, now=time.time())["health"]["internal_cost"] is None
+
+    def measured(proj):
+        _append(proj / "sess-B.jsonl", {"type": "cost-state", "sessionId": "sess-B", "startTime": 1,
+                                         "modelUsage": {"claude-sonnet-5": {"costUSD": 0.5},
+                                                        "claude-haiku-4-5-20251001": {"costUSD": 0.02}}})
+    h = views.overview(_copy(tmp_path / "medido", measured), now=time.time())["health"]
+    # Haiku no aparece como petición en sess-B: es coste interno. Sonnet sí: no lo es.
+    assert h["internal_cost"] == {"sessions": 1, "cost": pytest.approx(0.02),
+                                  "measured": pytest.approx(0.52),
+                                  "share": pytest.approx(0.02 / 0.52)}

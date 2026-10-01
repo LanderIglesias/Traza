@@ -138,3 +138,25 @@ def test_agente_terminado_no_tiene_herramientas_colgadas():
     # §7.1: "terminado" manda; un tool_use sin resultado de un agente que ya terminó está
     # abandonado, no colgado (revisión de F6)
     assert kinds(call("Bash", result=None, ago=60), finished=True) == []
+
+
+# --- colgada (sesión viva) frente a sin terminar (sesión cerrada) — revisión de F6 ---------------
+# El JSONL no dice si Claude Code sigue en marcha: una herramienta atascada y una sesión cerrada
+# con una herramienta a medias dejan el mismo rastro. Se separan por cuánto lleva la sesión sin
+# escribir (en disco, la herramienta más larga que no espera al usuario dura 10 min: el tope de
+# Bash).
+
+def test_colgada_solo_si_la_sesion_sigue_escribiendo():
+    tool = call("Bash", result=None, ago=15)
+    assert kinds(tool, session_quiet_s=5 * 60) == [("hung", True)]
+
+
+def test_sesion_cerrada_con_herramienta_a_medias_es_sin_terminar_en_gris():
+    tool = call("Bash", result=None, ago=3 * 24 * 60)               # hace 3 días
+    assert kinds(tool, session_quiet_s=3 * 24 * 3600) == [("unfinished", False)]
+
+
+def test_herramienta_que_espera_al_usuario_nunca_esta_colgada():
+    # AskUserQuestion / ExitPlanMode: en disco hasta 115 min esperando una respuesta humana
+    for tool in ("AskUserQuestion", "ExitPlanMode"):
+        assert kinds(call(tool, result=None, ago=120), session_quiet_s=60) == []

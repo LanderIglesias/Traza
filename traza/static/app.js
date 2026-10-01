@@ -60,7 +60,8 @@ const CHEVRON = ["M6 9l6 6 6-6"];
 // Señales (§7.2): una pista para mirar, no un veredicto. En rojo las alertas; en gris, las que informan.
 const SIGNAL_LABEL = { error: "failed tool call", api_error: "API error", loop: "loop",
   retry_failed: "failed retry", hung: "no result for 10+ min", blocked: "blocked",
-  compaction: "context compacted", retry_ok: "retried ok" };
+  compaction: "context compacted", retry_ok: "retried ok",
+  unfinished: "unfinished: the session ended with this tool still running" };
 const ALERT_KINDS = ["error", "api_error", "loop", "retry_failed", "hung"];
 const plural = (n, w) => (n === 1 || w.endsWith("min") ? `${n} ${w}`
   : w.endsWith("y") ? `${n} ${w.slice(0, -1)}ies` : `${n} ${w}s`);
@@ -110,7 +111,17 @@ function renderCards(d) {
     `Parser health · ${h.unknown.toLocaleString("en-US")} unknown lines · ` +
     `${h.ignored.toLocaleString("en-US")} lines ignored on purpose (${h.ignored_types} types) · ` +
     (h.implausible ? `${h.implausible.toLocaleString("en-US")} requests with implausibly low output tokens · ` : "") +
-    `costs are estimates from public prices · internal cost not broken down`;
+    `costs are estimates from public prices` +
+    // coste interno (llamadas de Claude Code que no se escriben): solo si hay algo medido
+    (h.internal_cost ? ` · internal cost measured: ${money(h.internal_cost.cost)} in ${plural(h.internal_cost.sessions, "session")}` : "");
+  $("health-internal").hidden = !h.internal_cost;
+  if (h.internal_cost) {
+    const ic = h.internal_cost;
+    $("health-internal-text").textContent =
+      `Claude Code also calls models for its own work (session titles, summaries) and does not write those calls to the session files. ` +
+      `Its own cost records measure them in ${plural(ic.sessions, "session")}: ${money(ic.cost)}, ` +
+      `${(ic.share * 100).toFixed(2)} % of the ${money(ic.measured)} those records cover. Sessions without a cost record cannot be measured.`;
+  }
   $("health-ignored").replaceChildren(...Object.entries(h.ignored_by_type).map(([t, n]) =>
     el("li", {}, el("span", { text: t }), el("span", { text: n.toLocaleString("en-US") }))));
 }

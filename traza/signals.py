@@ -10,6 +10,11 @@ LOOP_REPEATS = 3     # la misma llamada (herramienta + hash del input) SEGUIDAS 
                      # "3 veces en cualquier sitio" daba 90 alertas en disco (relecturas, pytest
                      # repetidos); "seguidas" da 2, las dos bucles de verdad.
 HUNG_AFTER_S = 600   # herramienta sin resultado: el mismo umbral que "agente parado" (§7.1)
+CLOSED_AFTER_S = 1800  # sesión sin escribir nada: se da por cerrada. ponytail: heurística; el
+                       # JSONL no dice si Claude Code sigue en marcha. 3× la herramienta más
+                       # larga en disco que no espera al usuario (10 min, el tope de Bash).
+# Esperan una respuesta humana (en disco, hasta 115 min): nunca están "colgadas".
+WAITS_FOR_USER = frozenset({"AskUserQuestion", "ExitPlanMode"})
 
 # Las que cuentan como alerta; el resto se muestra en gris (bloqueo, compactación, reintento
 # que funcionó): informan, no piden mirar.
@@ -35,11 +40,13 @@ def _status(result: dict | None) -> str | None:
 
 
 def agent_signals(events: list[dict], now: float, live_children=frozenset(),
-                  finished: bool = False) -> list[dict]:
+                  finished: bool = False, session_quiet_s: float = 0) -> list[dict]:
     """[{kind, alert, event, tool}] de un agente. `events`: sus eventos en orden (id, kind,
     tool_name, tool_use_id, input_hash, is_error, denial, ts, request_id). `live_children`:
     tool_use_ids que lanzaron un subagente que sigue escribiendo (no está colgado: trabaja).
-    `finished`: el agente está "done" (§7.1): nada suyo está colgado, está abandonado."""
+    `finished`: el agente está "done" (§7.1): nada suyo está colgado, está abandonado.
+    `session_quiet_s`: segundos desde la última escritura de la sesión: decide entre "hung"
+    (sesión viva: alerta) y "unfinished" (cerrada con la herramienta a medias: informa)."""
     uses = {e["tool_use_id"]: e for e in events if e["kind"] == "tool_use" and e["tool_use_id"]}
     results = {e["tool_use_id"]: e for e in events
                if e["kind"] == "tool_result" and e["tool_use_id"] in uses}
@@ -83,16 +90,20 @@ def agent_signals(events: list[dict], now: float, live_children=frozenset(),
             add("loop", e["id"], e["tool_name"])
 
     # 3. colgada: herramienta en vuelo (§7.1: de la ÚLTIMA respuesta, sin resultado y sin prompt
-    #    posterior) desde hace más de HUNG_AFTER_S, salvo un subagente que sigue trabajando
+    #    posterior) desde hace más de HUNG_AFTER_S, salvo un subagente que sigue trabajando o
+    #    una herramienta que espera al usuario. Con la sesión callada > CLOSED_AFTER_S no es un
+    #    atasco ahora: la sesión terminó con ella a medias ("unfinished", gris).
     last_req = None if finished else next(
         (e["request_id"] for e in reversed(events) if e["request_id"]), None)
     last_prompt = max((pos[e["id"]] for e in events if e["kind"] == "prompt"), default=-1)
     for e in events:
         if (e["kind"] == "tool_use" and e["request_id"] == last_req and pos[e["id"]] > last_prompt
-                and e["tool_use_id"] not in results and e["tool_use_id"] not in live_children):
+                and e["tool_use_id"] not in results and e["tool_use_id"] not in live_children
+                and e["tool_name"] not in WAITS_FOR_USER):
             started = parse_ts(e["ts"])
             if started is not None and now - started.timestamp() > HUNG_AFTER_S:
-                add("hung", e["id"], e["tool_name"])
+                add("hung" if session_quiet_s < CLOSED_AFTER_S else "unfinished",
+                    e["id"], e["tool_name"])
 
     # en el orden en que ocurrieron (estable: un error va antes que su reintento)
     return sorted(out, key=lambda s: pos[s["event"]])

@@ -132,6 +132,13 @@ heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `
 
 ## F7 — Empaquetado y portfolio (~1 día)
 
+**Antes de empezar (revisión de F6):** usar el panel **un día entero de trabajo real sin escribir
+código** — prueba de aceptación personal: ¿aparecen las señales cuando toca?, ¿cuadra el árbol
+con lo que recuerdas?, ¿es creíble el coste por subagente?, ¿hay lentitud, tooltips que tapan,
+scroll que salta? Lo que salga se arregla antes del README y del GIF (el GIF no se rehace).
+Posible historia para el README: el 92 % de los reintentos que funcionan **cambian la llamada**
+(los agentes corrigen sus errores), findings.md "Antes de F7".
+
 - Instalación en un comando **desde el repo**: `pipx install git+https://github.com/<usuario>/traza`.
   Publicar en PyPI (`pipx install traza`) solo si el tiempo lo permite.
 - README en inglés con: "el primer arranque construye la caché (~2 s con 90k líneas, más con

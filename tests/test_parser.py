@@ -209,3 +209,16 @@ def test_caracteres_escritos_por_el_modelo():
                                   {"type": "thinking", "thinking": ""}]}))
     assert [(e.kind, e.chars) for e in p.events] == [
         ("text", 4), ("tool_use", len("Bash") + len('{"command": "ls"}'))]
+
+
+def test_cost_state_se_lee_para_el_coste_interno():
+    # cost-state registra el gasto del proceso por modelo, incluidas las llamadas internas de
+    # Claude Code (p. ej. Haiku para títulos) que no se escriben como peticiones (findings §4).
+    p = parse_line(line(type="cost-state", startTime=123, modelUsage={
+        "claude-haiku-4-5-20251001": {"costUSD": 0.0179, "inputTokens": 1},
+        "claude-sonnet-5": {"costUSD": 2.0}}))
+    assert p.cost_state == (123, {"claude-haiku-4-5-20251001": 0.0179, "claude-sonnet-5": 2.0})
+    assert p.ignored is None
+    # forma rara: no se inventa una medida
+    raro = parse_line(line(type="cost-state", startTime="x", modelUsage=[]))
+    assert raro.cost_state is None and raro.ignored == "cost-state"

@@ -150,8 +150,10 @@
         <h4>Lines ignored on purpose</h4>
         <p>Known line types that carry nothing to show (hook output, queue bookkeeping…). They are counted so a format change cannot hide behind them.</p>
         <ul id="health-ignored"></ul>
-        <h4>Internal cost not broken down</h4>
-        <p>Claude Code also calls models for its own work (session titles, summaries). Those calls are not written to the session files, so every cost here is a floor, not the full bill.</p>
+        <div id="health-internal" hidden>
+          <h4>Internal cost</h4>
+          <p id="health-internal-text"></p>
+        </div>
       </div>
     </details>
   </footer>

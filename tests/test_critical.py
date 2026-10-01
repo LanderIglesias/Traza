@@ -63,7 +63,9 @@ def test_parser_sobre_fixture_con_forma_real():
         (20, "text", 0, None, None, None),
     ]
     assert {i: p.ignored for i, p in enumerate(parsed) if p.ignored} == {
-        0: "queue-operation", 2: "attachment", 10: "system:stop_hook_summary", 17: "cost-state"}
+        0: "queue-operation", 2: "attachment", 10: "system:stop_hook_summary"}
+    # cost-state ya no se ignora (F6): se lee para el coste interno
+    assert parsed[17].cost_state == (0, {}) and parsed[17].ignored is None
     assert [(i, p.title) for i, p in enumerate(parsed) if p.title] == [(12, "Listar ficheros")]
     # thinking no crea evento ni se cuenta como ignorado, pero su línea sí aporta la petición
     assert parsed[3].events == [] and parsed[3].request.request_id == "req_1"

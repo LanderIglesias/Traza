@@ -6,8 +6,8 @@ from pathlib import Path
 from .parser import Request, Tokens
 
 # Subir cualquiera de los dos borra y reconstruye la BD: no hay migraciones (§6.4).
-PARSER_VERSION = "12"
-SCHEMA_VERSION = "6"
+PARSER_VERSION = "13"
+SCHEMA_VERSION = "7"
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
@@ -34,6 +34,12 @@ CREATE TABLE requests (
 CREATE TABLE request_refs (
     request_id TEXT NOT NULL, file_path TEXT NOT NULL, session_id TEXT NOT NULL,
     agent_id TEXT NOT NULL, PRIMARY KEY (request_id, file_path)
+);
+-- Líneas cost-state (gasto del proceso por modelo, design.md §4.1): de aquí sale el coste interno
+CREATE TABLE cost_states (
+    file_path TEXT NOT NULL, byte_offset INTEGER NOT NULL, session_id TEXT NOT NULL,
+    start_ms INTEGER NOT NULL, model TEXT NOT NULL, cost_usd REAL NOT NULL,
+    PRIMARY KEY (file_path, byte_offset, model)
 );
 CREATE TABLE ignored (
     file_path TEXT NOT NULL, type TEXT NOT NULL, n INTEGER NOT NULL,
@@ -203,6 +209,30 @@ def implausible_output(conn) -> set[str]:
     chars = request_chars(conn)
     return {rid for rid, out in conn.execute("SELECT request_id, output FROM requests")
             if implausible(out, chars.get(rid))}
+
+
+def internal_cost(conn) -> dict | None:
+    """Coste interno medido (design.md §4.1): en cada cost-state (el último de cada proceso,
+    porque es acumulado), el costUSD de los modelos que esa sesión nunca usa en una petición:
+    son llamadas internas de Claude Code que no se escriben (títulos, resúmenes). None si no hay
+    nada medido: la barra de salud calla en vez de mostrar una nota que no dice cuánto."""
+    used = set(conn.execute("""SELECT DISTINCT r.session_id, q.model FROM request_refs r
+                               JOIN requests q USING (request_id)"""))
+    internal, measured, sessions = 0.0, 0.0, set()
+    for sid, model, cost in conn.execute("""
+            SELECT c.session_id, c.model, c.cost_usd FROM cost_states c JOIN (
+                SELECT file_path, start_ms, MAX(byte_offset) AS off FROM cost_states
+                GROUP BY file_path, start_ms) l
+              ON l.file_path = c.file_path AND l.start_ms = c.start_ms AND l.off = c.byte_offset"""):
+        measured += cost
+        if (sid, model) not in used:
+            internal += cost
+            sessions.add(sid)
+    if not internal:
+        return None
+    # share: sobre TODO lo que registran los cost-state (incluidas sesiones sin coste interno)
+    return {"sessions": len(sessions), "cost": internal, "measured": measured,
+            "share": internal / measured}
 
 
 def ignored_counts(conn) -> dict[str, int]:

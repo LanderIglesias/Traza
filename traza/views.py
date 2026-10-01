@@ -163,7 +163,10 @@ def agent_signal_map(conn, now: float, session_id: str | None = None, states=Non
                                   (int((now - sig.HUNG_AFTER_S) * 1e9),)):
         live[sid].add(tuid)
     agent_st = (states or _agent_states(conn, now))[0]   # "done" manda (§7.1)
-    return {k: sig.agent_signals(evs, now, live[k[0]], agent_st.get(k) == "done")
+    quiet = {sid: now - m / 1e9 for sid, m in conn.execute(
+        "SELECT session_id, MAX(mtime_ns) FROM files GROUP BY session_id")}
+    return {k: sig.agent_signals(evs, now, live[k[0]], agent_st.get(k) == "done",
+                                 quiet.get(k[0], float("inf")))
             for k, evs in by_agent.items()}
 
 
@@ -252,6 +255,7 @@ def overview(conn, now: float | None = None, states=None, signals=None) -> dict:
                    "ignored": sum(ignored.values()), "ignored_types": len(ignored),
                    # output_tokens mal escrito por Claude Code: aviso contado (design.md §8)
                    "implausible": len(db.implausible_output(conn)),
+                   "internal_cost": db.internal_cost(conn),   # None = nada medido: silencio
                    "ignored_by_type": dict(sorted(ignored.items(), key=lambda kv: (-kv[1], kv[0])))},
         "sessions": sorted(sessions.values(), key=lambda s: s["last_activity"], reverse=True),
     }

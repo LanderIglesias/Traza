@@ -103,7 +103,7 @@ def _ingest(conn, path: str, offset: int, mtime_ns: int, head: str | None) -> in
         f.seek(offset)
         data = f.read()
     end = data.rfind(b"\n") + 1  # lo que haya después es una línea a medias: se relee luego
-    events, refs, reqs, ignored = [], [], [], Counter()
+    events, refs, reqs, ignored, costs = [], [], [], Counter(), []
     title = first_ts = None
     pos = n = 0
     while pos < end:
@@ -116,6 +116,9 @@ def _ingest(conn, path: str, offset: int, mtime_ns: int, head: str | None) -> in
             ignored[p.ignored] += 1
         if p.title:
             title = p.title
+        if p.cost_state:
+            start, by_model = p.cost_state
+            costs += [(path, line_offset, session_id, start, m, c) for m, c in by_model.items()]
         if p.request:
             r, t = p.request, p.request.tokens
             reqs.append((r.request_id, r.timestamp, r.model, *t, r.speed, r.inference_geo,
@@ -141,6 +144,7 @@ def _ingest(conn, path: str, offset: int, mtime_ns: int, head: str | None) -> in
         input_hash, origin, request_id, denial, agent_ref, agent_status, chars)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                      events)
+    conn.executemany("INSERT OR IGNORE INTO cost_states VALUES (?,?,?,?,?,?)", costs)
     conn.executemany("""INSERT INTO ignored VALUES (?, ?, ?)
         ON CONFLICT (file_path, type) DO UPDATE SET n = n + excluded.n""",
                      [(path, t, c) for t, c in ignored.items()])
@@ -172,7 +176,7 @@ def _load_meta(conn, path: str, session_id: str, agent_id: str) -> None:
 
 def _clear(conn, path: str) -> None:
     """Borra lo leído de un fichero y lo deja para releer desde 0."""
-    for table in ("events", "request_refs", "ignored"):
+    for table in ("events", "request_refs", "ignored", "cost_states"):
         conn.execute(f"DELETE FROM {table} WHERE file_path = ?", (path,))
     _, session_id, agent_id = _ids(Path(path))
     if agent_id == "main":  # el título salía de las líneas que ya no están

@@ -315,3 +315,30 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
   caché: reintentos fallidos 37 → 35, reintentos que funcionaron 202 → 197); un agente `done`
   podía mostrar una herramienta "colgada" para siempre (0 casos hoy en disco; la regla de §7.1
   ya decía que "terminado" manda y las señales no lo aplicaban).
+
+## Antes de F7 (01-10-2026)
+
+- **Duración real de las herramientas** (11.564 llamadas con resultado): mediana 2 s, p99
+  160 s, p99,9 603 s. Las 21 de más de 10 min: 12 `Bash` en su tope de 10 min (timeouts
+  reales) y 9 `AskUserQuestion`/`ExitPlanMode` de hasta **115 min** esperando una respuesta
+  humana. Sin excluirlas, "colgada" las habría marcado en rojo. De aquí salen las reglas de
+  "colgada" (sesión que escribe en los últimos 30 min) frente a "sin terminar" (gris).
+- **Coste interno medido:** $0,019 en 2 sesiones con `cost-state` (0,88 % y 0,66 % de su
+  gasto); 0,03 % de los $55 que cubren todos los `cost-state` del disco. Es pequeño: la nota fija
+  anterior ("internal cost not broken down") lo hacía parecer un agujero de tamaño desconocido.
+- **Cifra de referencia del `?` de plausibilidad:** 24 de 163 agentes (15 %) llevan `?` el
+  01-10-2026, 390 peticiones de 8.8k. Si Claude Code corrige el `usage`, debe bajar; si sube,
+  hay más versiones o flujos afectados.
+- **Los 198 "reintentos que funcionaron"** se concentran en 32 de 116 agentes; 150 son `Bash`.
+  183 (92 %) **cambiaron la llamada** (otra ruta, otro comando, otra forma de citar): el agente
+  corrige su propio error. Solo 15 repitieron exactamente lo mismo (fallo pasajero). No es "el
+  modelo repite porque no recuerda".
+- **Build completo:** 2,53–2,86 s con 101.335 líneas (un 7,3 s aislado en la primera medida,
+  disco frío o carga de fondo; no se repitió).
+- **`no-cache` cuesta ~2 ms por fichero** (304 con ETag); los estáticos suman 223 KB, casi todo
+  la fuente. Imperceptible.
+- **Móvil (390 px), dos fallos que no se veían en escritorio, corregidos:** el título de la
+  sesión en la cabecera del panel se partía una palabra por línea (el estado y el coste no se
+  plegaban), y en las filas de sesión con badges el título quedaba en una letra o desaparecía
+  (este venía de F4, al añadir el chip de bloqueos). Ahora la cabecera y la fila hacen salto de
+  línea; verificado también que en escritorio no cambia nada.
