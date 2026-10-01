@@ -144,6 +144,16 @@ heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `
 - README, límites de lo que Claude Code escribe (no son bugs de traza): subagentes sin fin
   registrado en disco (3 de 93) se quedan en "idle" con tooltip; `output_tokens` mal escrito
   (aviso de plausibilidad); skill forks sin enlazar a su padre (decisión, design.md §6.1).
+- **Notas de la revisión de F5** (decidir y probar antes de cerrar F7):
+  1. "Load earlier" no tiene tope (300 turnos = 6 clics), no se puede volver a plegar y se
+     resetea al cambiar de agente: decidir si basta o hace falta "cargar todos" / "volver a 50".
+  2. Scroll con turnos anteriores cargados y un tick nuevo: comprobar que la vista no salta.
+  3. Arranque tras reconstruir la caché (panel sin sesiones mientras dura el primer escaneo):
+     **medir** con dos tamaños de disco y anotar si crece; decisión consciente, no "~2 s".
+  4. Recorte a 20.000 caracteres con una salida real así de larga dentro de una vista con 50
+     turnos desplegados: medir el tiempo de render.
+  5. Mensaje "terminó sin escribir texto": verlo en pantalla con un subagente forzado a
+     devolver sin texto.
 - **Decidir antes de cerrar F7:** truncado/sustitución de un fichero **en vivo** (probado solo
   con tests): o se prueba con un fichero real mientras corre el servidor, o se documenta como
   limitación.

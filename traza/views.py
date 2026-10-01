@@ -288,13 +288,15 @@ def agent_tree(conn, session_id: str, now: float | None = None, states=None,
         FROM events WHERE session_id = ? GROUP BY agent_id""", (session_id,))}
     owner_agent = dict(conn.execute("""SELECT request_id, owner_agent_id FROM request_owner
                                        WHERE owner_session_id = ?""", (session_id,)))
-    costs, outputs, implausible = defaultdict(list), defaultdict(list), defaultdict(int)
-    suspect = db.implausible_output(conn)
+    costs, outputs, written, suspect = (defaultdict(list), defaultdict(list), defaultdict(int),
+                                        defaultdict(int))
+    chars = db.request_chars(conn)
     for r in db.requests(conn, session_id):
         a = owner_agent[r.request_id]
         costs[a].append(request_cost(r))
         outputs[a].append(r.tokens.output)
-        implausible[a] += r.request_id in suspect
+        written[a] += chars.get(r.request_id, 0)
+        suspect[a] += db.implausible(r.tokens.output, chars.get(r.request_id))
     children = defaultdict(list)
     for aid, parent in parents.items():
         if parent is not None and parent != aid:
@@ -321,7 +323,10 @@ def agent_tree(conn, session_id: str, now: float | None = None, states=None,
             "state": states.get((session_id, aid), "idle"),
             "requests": len(costs[aid]),
             "output": None if None in outs else sum(outs),
-            "implausible": implausible[aid],   # peticiones con output_tokens sospechoso
+            # "?" del agente: solo si SU SUMA es implausible (design.md §8); las peticiones
+            # sospechosas sueltas se cuentan para el tooltip
+            "implausible": db.implausible(None if None in outs else sum(outs), written[aid]),
+            "implausible_requests": suspect[aid],
             **_money(costs[aid]),
             "total": _money(subtree(aid, {aid})),
             "errors": errors, "blocked": blocked, "started": started,

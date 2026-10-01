@@ -228,7 +228,12 @@ function agentRow(s, n, depth, hasKids) {
     el("td", { className: "num", "data-label": "Own", text: money(n.cost, n.unpriced) }),
     el("td", { className: "num", "data-label": "Incl. subagents", text: money(n.total.cost, n.total.unpriced) }),
     el("td", { className: "num", "data-label": "Output", text: out,
-      title: n.implausible ? `${n.implausible} of its requests report far fewer output tokens than the text they wrote (Claude Code wrote the number wrong): the real output, and cost, are higher` : "" }),
+      // "?" solo si la suma del agente es implausible (design.md §8); las sueltas, en el título
+      title: n.implausible
+        ? `Its output tokens add up to far less than the text it wrote (${n.implausible_requests} requests with the count written wrong by Claude Code): the real output, and cost, are higher`
+        : n.implausible_requests
+          ? `${n.implausible_requests} of its requests report too few output tokens; the agent's total is still plausible`
+          : "" }),
     el("td", { className: "num", "data-label": "$/1M out", text: po === null ? "–" : money(po) }));
 }
 

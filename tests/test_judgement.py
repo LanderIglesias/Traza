@@ -211,3 +211,25 @@ def test_agente_reanudado_devuelve_lo_ultimo_no_lo_primero(tmp_path, root):
     assert j["agent"]["state"] == "done"            # la notificación (10:00:30) es posterior
     assert j["result"]["source"] == "final_text"
     assert _content(c, root, [j["result"]["id"]])[j["result"]["id"]]["text"] == "y tampoco aparece."
+
+
+def test_un_turno_es_exactamente_una_peticion(conn, root):
+    # Definición de "turno" (design.md §7.3), la misma para la vista de juicio y para F6:
+    # un requestId = un turno; sus text/tool_use dentro; cada tool_result con su tool_use.
+    for aid in ("main", "abc"):
+        j = views.agent_view(conn, "sess-A", aid, root=root)
+        turns = [i for i in j["items"] if i["kind"] == "turn"]
+        rids = [t["request_id"] for t in turns if t["request_id"]]
+        assert len(rids) == len(set(rids))                         # ninguna petición partida
+        expected = {r for r, in conn.execute(
+            "SELECT DISTINCT request_id FROM events WHERE session_id = 'sess-A' AND agent_id = ? "
+            "AND kind IN ('text', 'tool_use') AND request_id IS NOT NULL", (aid,))}
+        assert set(rids) == expected                               # ni dos juntas, ni ninguna fuera
+        for t in turns:
+            for e in t["events"]:
+                rid, tuid = conn.execute("SELECT request_id, tool_use_id FROM events WHERE id = ?",
+                                         (e["id"],)).fetchone()
+                assert rid == t["request_id"]
+                if e.get("result"):
+                    assert conn.execute("SELECT tool_use_id FROM events WHERE id = ?",
+                                        (e["result"]["id"],)).fetchone()[0] == tuid

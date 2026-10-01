@@ -372,8 +372,22 @@ def test_subagente_reanudado_deja_de_estar_terminado(tmp_path):
 
 
 def test_output_implausible_se_ve_en_salud_y_en_el_nodo(conn):
+    # Política de "?" al agregar (design.md §8): como en las sumas de coste, la suma solo lleva
+    # "?" si ELLA es implausible, no si lo es algún sumando. abc tiene una sola petición.
     assert views.overview(conn, now=time.time())["health"]["implausible"] == 0
     conn.execute("UPDATE events SET chars = 5000 WHERE request_id = 'req_s1'")   # 7 tokens
     assert views.overview(conn, now=time.time())["health"]["implausible"] == 1
     n = _nodes(conn)
-    assert (n["abc"]["implausible"], n["main"]["implausible"]) == (1, 0)
+    assert (n["abc"]["implausible"], n["abc"]["implausible_requests"]) == (True, 1)
+    assert (n["main"]["implausible"], n["main"]["implausible_requests"]) == (False, 0)
+
+
+def test_una_peticion_implausible_no_marca_al_agente_entero(conn):
+    # main: req_1 declara 20 tokens para 2.000 caracteres (sospechosa: 20 × 40 < 2.000), pero el
+    # agente entero declara 84 tokens (× 40 = 3.360) para ~2.000: su suma es plausible.
+    conn.execute("UPDATE events SET chars = 2000 WHERE request_id = 'req_1' AND kind = 'text'")
+    n = _nodes(conn)
+    assert (n["main"]["implausible"], n["main"]["implausible_requests"]) == (False, 1)
+    # y si casi todo lo que escribió está mal contado, sí
+    conn.execute("UPDATE events SET chars = 9000 WHERE request_id = 'req_2' AND kind = 'text'")
+    assert _nodes(conn)["main"]["implausible"] is True

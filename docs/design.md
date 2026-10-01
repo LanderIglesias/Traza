@@ -526,6 +526,16 @@ Los umbrales viven en un solo bloque de constantes.
 | Herramienta colgada | `tool_use` sin resultado > 10 min, **excepto** si lanza un subagente que sigue escribiendo | sí |
 | Coste por token de salida | columna ordenable | no |
 
+### 7.3 Turno
+
+**Un turno es exactamente una petición del modelo (un `requestId`)**: sus bloques `text` y
+`tool_use`, más el `tool_result` de cada `tool_use`, emparejado por `tool_use_id`. Ni ventana
+temporal ni "hasta el siguiente texto": una petición = un turno, sin partir ni juntar. Texto
+sin `requestId` (`<synthetic>`) es un turno propio. Prompts y eventos de sistema no son turnos
+(van como elementos aparte). Es la unidad de la vista de juicio (paginación "últimos 50", coste
+y tokens por turno) y la que usan las señales de F6. Test: `test_judgement.py::
+test_un_turno_es_exactamente_una_peticion` (con mutación: un turno por evento lo rompe).
+
 ## 8. Pruebas y evaluación (cómo se demuestra que los datos son correctos)
 
 1. **Test de deduplicación por `requestId`** (exhaustivo): fixture con peticiones multilínea;
@@ -556,9 +566,17 @@ queda ninguna, el test se salta con ese motivo. Las copias (sesiones que compart
      valores 100/200/300 en todos los órdenes; "primera" y "última" fallan, solo "mayor" pasa);
    - **comprobación de plausibilidad**, un aviso contado y no una aserción: una petición que
      declara menos de 1 token de salida por cada 40 caracteres escritos (10 veces menos que una
-     estimación generosa) se cuenta en la barra de salud y se marca con `?` en su agente. En
-     disco: 373 de 8.786 (p. ej. 31 tokens para 10.316 caracteres de JSON). traza no puede
-     corregir ese número: lo escribió así Claude Code.
+     estimación generosa) se cuenta en la barra de salud. En disco: 385 de 8.811 (p. ej. 7
+     tokens para 10.254 caracteres de texto). **Verificado a mano** (10 al azar, semilla fija):
+     las 10 son reales, 66–1.465 caracteres por token, ninguna respuesta corta legítima; todas
+     con `stop_reason` null en todas sus líneas (2.1.247–2.1.263): Claude Code no escribió la
+     línea final con el `usage` completo. traza no puede corregir ese número.
+   - **Política de `?` al agregar** (la misma que en las sumas de coste, §6.6): una suma lleva
+     `?` solo si **ella** es implausible (salida × 40 < caracteres de todo lo sumado), no si lo
+     es algún sumando. Petición y turno (un turno es una petición, §7.3): `?` si ella lo es.
+     Agente: `?` si su total lo es; sus peticiones sospechosas sueltas van al tooltip. Barra de
+     salud: el número de peticiones, informativo. Efecto en disco: agentes con `?` 70 → 24 de
+     163 (con "algún sumando" la marca salía en el 43 % y no decía nada).
 3. **Tests del parser** por tipo de línea, incluidos `<synthetic>`, sin `requestId`, `unknown`.
 4. **Tests del watcher:** línea parcial, truncado, borrado, idempotencia al reprocesar.
 5. **Test de seguridad:** una salida de herramienta con `<script>` no se ejecuta; `Host` ajeno →

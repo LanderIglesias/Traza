@@ -175,21 +175,34 @@ def orphans(conn, session_id: str) -> dict[str, str]:
 
 # Plausibilidad de output_tokens (design.md §8): menos de 1 token por cada 40 caracteres que el
 # modelo escribió es 10 veces menos que una estimación generosa (~4 caracteres/token). En disco:
-# 373 de 8.786 peticiones (p. ej. 31 tokens para 10.316 caracteres). Es un AVISO contado: traza
-# no puede corregir lo que Claude Code escribió mal.
+# 385 de 8.811 peticiones (p. ej. 7 tokens para 10.254 caracteres). Revisadas a mano 10 al
+# azar: todas reales (66–1.465 caracteres/token, stop_reason null en todas sus líneas: Claude
+# Code no escribió la línea final con el usage completo). Es un AVISO contado: traza no puede
+# corregir lo que Claude Code escribió mal.
 CHARS_PER_TOKEN_FLOOR = 40
 
 
+def implausible(output: int | None, chars: int | None) -> bool:
+    """La regla, para una petición o para una suma (agente): la política de "?" al agregar es
+    la misma que la del coste: la suma lleva "?" si ELLA es implausible, no si algún sumando."""
+    return output is not None and chars is not None and output * CHARS_PER_TOKEN_FLOOR < chars
+
+
+def request_chars(conn) -> dict[str, int]:
+    """{requestId: caracteres que escribió el modelo}. Se suman por fichero y se toma el mayor
+    (una copia de sesión repite las mismas líneas)."""
+    return dict(conn.execute("""
+        SELECT request_id, MAX(c) FROM (
+            SELECT request_id, file_path, SUM(chars) AS c FROM events
+            WHERE request_id IS NOT NULL AND chars IS NOT NULL GROUP BY request_id, file_path)
+        GROUP BY request_id"""))
+
+
 def implausible_output(conn) -> set[str]:
-    """requestIds cuyo output_tokens es implausiblemente bajo para lo que escribieron. Los
-    caracteres se suman por fichero (una copia de sesión repite las mismas líneas)."""
-    return {rid for rid, in conn.execute(f"""
-        SELECT q.request_id FROM requests q JOIN (
-            SELECT request_id, MAX(c) AS chars FROM (
-                SELECT request_id, file_path, SUM(chars) AS c FROM events
-                WHERE request_id IS NOT NULL GROUP BY request_id, file_path)
-            GROUP BY request_id) w USING (request_id)
-        WHERE q.output IS NOT NULL AND q.output * {CHARS_PER_TOKEN_FLOOR} < w.chars""")}
+    """requestIds cuyo output_tokens es implausiblemente bajo para lo que escribieron."""
+    chars = request_chars(conn)
+    return {rid for rid, out in conn.execute("SELECT request_id, output FROM requests")
+            if implausible(out, chars.get(rid))}
 
 
 def ignored_counts(conn) -> dict[str, int]:
