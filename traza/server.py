@@ -147,6 +147,9 @@ def create_app(db_path, root, port: int, interval: float = 0.5,
         response.headers["Content-Security-Policy"] = CSP
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
+        # revalidar siempre (ETag): un index.html viejo en caché con un app.js nuevo rompe la
+        # página al actualizar traza
+        response.headers.setdefault("Cache-Control", "no-cache")
         return response
 
     @app.get("/")

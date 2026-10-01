@@ -119,7 +119,7 @@ heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `
 - Test: si el `uuid` en el offset no coincide, o el fichero ya no existe, se muestra
   "contenido no disponible".
 
-## F6 — Señales y salud del parser (~1 día)
+## F6 — Señales y salud del parser (~1 día)  ✅ tests verdes y verificado en vivo, pendiente de revisión
 
 `traza/signals.py`: funciones puras con los umbrales en un bloque de constantes.
 

@@ -144,8 +144,16 @@
   </div>
 
   <footer class="health" id="health" aria-label="Parser health">
-    <span class="health-dot" aria-hidden="true"></span>
-    <span id="health-text">Parser health</span>
+    <details class="health-more">
+      <summary><span class="health-dot" aria-hidden="true"></span><span id="health-text">Parser health</span></summary>
+      <div class="health-panel">
+        <h4>Lines ignored on purpose</h4>
+        <p>Known line types that carry nothing to show (hook output, queue bookkeeping…). They are counted so a format change cannot hide behind them.</p>
+        <ul id="health-ignored"></ul>
+        <h4>Internal cost not broken down</h4>
+        <p>Claude Code also calls models for its own work (session titles, summaries). Those calls are not written to the session files, so every cost here is a floor, not the full bill.</p>
+      </div>
+    </details>
   </footer>
 </body>
 </html>

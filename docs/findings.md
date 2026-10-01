@@ -281,3 +281,32 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
   entregar mostraba lo de la primera vez (el resultado del padre solo vale si es posterior a su
   última línea, como "done"; test). Rendimiento revisado y sin cambio: `implausible_output`
   tarda 20 ms con la caché real (overview 196 ms, session_summary 306 ms, vista de main 228 ms).
+
+## Antes de F6 (01-10-2026)
+
+- **Los 385 avisos de plausibilidad, verificados a mano** (10 al azar, semilla 7): las 10 son
+  reales. Ejemplos: 7 tokens declarados para una revisión de seguridad de 10.254 caracteres;
+  3 tokens para un comando Bash de 315 caracteres. Rango 66–1.465 caracteres/token (umbral:
+  40). Todas con `stop_reason` null en **todas** sus líneas y de 2.1.247–2.1.263: Claude Code
+  no escribió la línea final de esas respuestas, la que lleva el `usage` completo.
+- **Política de `?` al agregar:** con "algún sumando sospechoso", 70 de 163 agentes llevaban
+  `?` (43 %: la marca no decía nada); con "la suma es implausible", 24.
+
+## F6 — Señales (01-10-2026)
+
+- **Calibración contra disco** (116 agentes, 11.544 llamadas a herramientas): el bucle de la
+  especificación ("≥ 3 veces, sin error intermedio") daba **90** alertas, casi todas
+  legítimas (38 `Read` releyendo, 26 `Bash` repitiendo `pytest`, 8 capturas); exigir 3 llamadas
+  idénticas **seguidas** da **2**, ambas bucles reales (un clic repetido en el mismo botón, la
+  misma lectura de un fichero de salida 3 veces). Reintento fallido (misma herramienta,
+  cualquier input): 34, y 8 revisados al azar son agentes atascados de verdad
+  (`request_access` denegado una y otra vez, `python -c` fallando dos veces, Glob con timeout
+  dos veces). Con el mismo input serían solo 3: se descartó por perder casos reales.
+- **Prueba en una sesión real (esta):** dos `cat` de ficheros inexistentes seguidos →
+  "failed retry" en el turno del segundo; el badge del nodo `main` lleva a la alerta más
+  reciente (que resultó ser otro fallo real mío: dos `evaluate_script` que fallaron seguidos),
+  con el turno abierto, centrado y con el foco; el resaltado sobrevive a los ticks.
+- **Bug encontrado al probar: caché del navegador.** Sin `Cache-Control`, Chrome sirvió un
+  `index.html` viejo con el `app.js` nuevo: `renderCards` fallaba en un elemento inexistente y
+  el panel se quedaba vacío y "Disconnected". Ahora `no-cache` (revalidación por ETag);
+  verificado recargando **sin** forzar: llegó el JS nuevo.

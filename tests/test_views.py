@@ -75,7 +75,10 @@ def test_overview_sobre_la_fixture(conn):
     # la ventana suma cada petición una vez (req_1 no se cuenta dos veces)
     assert ov["window"] == {"cost": pytest.approx(0.001223), "unpriced": 0}
     assert ov["counts"] == {"live_sessions": 1, "active_agents": 1, "sessions": 2}
-    assert ov["health"] == {"unknown": 1, "ignored": 4, "ignored_types": 4, "implausible": 0}
+    assert ov["health"] == {"unknown": 1, "ignored": 4, "ignored_types": 4, "implausible": 0,
+                            # desglose para la barra de salud (F6), de más a menos
+                            "ignored_by_type": {"attachment": 1, "cost-state": 1,
+                                                "queue-operation": 1, "system:stop_hook_summary": 1}}
     assert ov["generation"] == db.generation(conn)
     # orden: última actividad primero (ISO-8601, comparable como texto)
     acts = [s["last_activity"] for s in ov["sessions"]]
@@ -391,3 +394,34 @@ def test_una_peticion_implausible_no_marca_al_agente_entero(conn):
     # y si casi todo lo que escribió está mal contado, sí
     conn.execute("UPDATE events SET chars = 9000 WHERE request_id = 'req_2' AND kind = 'text'")
     assert _nodes(conn)["main"]["implausible"] is True
+
+
+# --- F6: señales en la sesión, en el nodo y en el turno -------------------------------------------
+
+def test_senales_de_la_fixture(conn):
+    # sess-A: un bloqueo (Read denegado), un api_error y una compactación en main; abc tiene un
+    # Grep sin resultado desde 2026-01-01 → colgado (> 10 min). Bloqueo y compactación informan,
+    # no son alertas.
+    a = next(s for s in views.overview(conn, now=time.time())["sessions"] if s["id"] == "sess-A")
+    assert a["signals"] == {"blocked": 1, "api_error": 1, "compaction": 1, "hung": 1}
+    assert a["alerts"] == 2
+    n = _nodes(conn)
+    grep = conn.execute("SELECT id FROM events WHERE tool_use_id = 'toolu_s1' "
+                        "AND kind = 'tool_use'").fetchone()[0]
+    assert (n["abc"]["alerts"], n["abc"]["alert_event"]) == (1, grep)    # lleva al evento
+    assert n["main"]["signals"] == {"blocked": 1, "api_error": 1, "compaction": 1}
+
+
+def test_agent_en_vuelo_con_hijo_que_escribe_no_esta_colgado(tmp_path):
+    # main termina en su Agent (toolu_9) sin resultado: colgado solo si abc deja de escribir
+    def cut(proj):
+        f = proj / "sess-A.jsonl"
+        f.write_text("".join(f.read_text(encoding="utf-8").splitlines(keepends=True)[:19]),
+                     encoding="utf-8")
+    c = _copy(tmp_path, cut)                               # _copy pone mtime = ahora
+    assert "hung" not in _nodes(c)["main"]["signals"]
+    sub = next(tmp_path.rglob("agent-abc.jsonl"))
+    old = time.time() - 3600
+    os.utime(sub, (old, old))
+    scan(c, tmp_path / "projects")
+    assert _nodes(c)["main"]["signals"].get("hung") == 1

@@ -217,3 +217,11 @@ def test_contenido_es_json_con_el_texto_literal(client):
                          ids=["vacio", "texto", "hueco", "inyeccion", "negativo", "201-ids"])
 def test_ids_de_contenido_se_validan(client, ids):
     assert client.get(f"/api/content?ids={ids}").status_code == 400
+
+
+def test_pagina_y_estaticos_se_revalidan_siempre(client):
+    # Sin Cache-Control, Chrome reutilizó un index.html viejo (caché heurística) con un app.js
+    # nuevo: la página se rompió tras actualizar traza (visto en F6). no-cache = revalidar con
+    # el ETag en cada carga, gratis en local.
+    for path in ("/", "/static/app.js", "/static/styles.css"):
+        assert client.get(path).headers["cache-control"] == "no-cache", path

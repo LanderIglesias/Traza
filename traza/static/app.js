@@ -57,6 +57,15 @@ function icon(paths) {
   return svg;
 }
 const CHEVRON = ["M6 9l6 6 6-6"];
+// Señales (§7.2): una pista para mirar, no un veredicto. En rojo las alertas; en gris, las que informan.
+const SIGNAL_LABEL = { error: "failed tool call", api_error: "API error", loop: "loop",
+  retry_failed: "failed retry", hung: "no result for 10+ min", blocked: "blocked",
+  compaction: "context compacted", retry_ok: "retried ok" };
+const ALERT_KINDS = ["error", "api_error", "loop", "retry_failed", "hung"];
+const plural = (n, w) => (n === 1 || w.endsWith("min") ? `${n} ${w}`
+  : w.endsWith("y") ? `${n} ${w.slice(0, -1)}ies` : `${n} ${w}s`);
+const alertText = (counts) => ALERT_KINDS.filter((k) => counts?.[k])
+  .map((k) => plural(counts[k], SIGNAL_LABEL[k])).join(" · ");
 const ALERT = ["M12 8v5", "M12 16.5v.01", "M10.3 3.9 2.6 17.3A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.7L13.7 3.9a2 2 0 0 0-3.4 0Z"];
 
 function pill(state) {
@@ -101,7 +110,9 @@ function renderCards(d) {
     `Parser health · ${h.unknown.toLocaleString("en-US")} unknown lines · ` +
     `${h.ignored.toLocaleString("en-US")} lines ignored on purpose (${h.ignored_types} types) · ` +
     (h.implausible ? `${h.implausible.toLocaleString("en-US")} requests with implausibly low output tokens · ` : "") +
-    `costs are estimates from public prices`;
+    `costs are estimates from public prices · internal cost not broken down`;
+  $("health-ignored").replaceChildren(...Object.entries(h.ignored_by_type).map(([t, n]) =>
+    el("li", {}, el("span", { text: t }), el("span", { text: n.toLocaleString("en-US") }))));
 }
 
 function renderRows(d) {
@@ -116,8 +127,8 @@ function renderRows(d) {
     const btn = el("button", { type: "button", className: "row", "data-id": s.id, "aria-current": String(s.id === ui.selected) },
       el("span", { className: "row-title" },
         el("span", { className: "t", text: titleOf(s) }),
-        s.errors ? el("span", { className: "badge", title: `${s.errors} tool results that failed, or API errors` },
-          icon(ALERT), el("span", { text: String(s.errors) })) : null,
+        s.alerts ? el("span", { className: "badge", title: alertText(s.signals) },
+          icon(ALERT), el("span", { text: String(s.alerts) })) : null,
         // la herramienta no llegó a ejecutarse (hook, regla de permisos, usuario): no es un fallo
         s.blocked ? el("span", { className: "badge badge-muted", title: `${s.blocked} tool calls blocked before running (hooks, permission rules, user)`,
           text: `${s.blocked} blocked` }) : null),
@@ -213,9 +224,13 @@ function agentRow(s, n, depth, hasKids) {
       n.orphan ? el("span", { className: "mark", "data-kind": n.orphan, text: ORPHAN_MARK[n.orphan] }) : null,
       el("button", { type: "button", className: "agent-name agent-open", text: name,
         "aria-label": `Open the timeline of ${name}` }),
+      n.alerts ? el("button", { type: "button", className: "badge badge-btn node-alerts",
+        title: alertText(n.signals), "aria-label": `${alertText(n.signals)}: show the latest` },
+        icon(ALERT), el("span", { text: String(n.alerts) })) : null,
       desc ? el("span", { className: "agent-desc", text: desc, title: desc }) : null));
   cell.style.setProperty("--depth", depth);
   cell.querySelector(".agent-open").addEventListener("click", () => openJudge(s.id, n.id));
+  cell.querySelector(".node-alerts")?.addEventListener("click", () => openJudge(s.id, n.id, n.alert_event));
   const po = perOut(n);
   const out = n.output === null ? "?" : n.output.toLocaleString("en-US") + (n.implausible ? " ?" : "");
   const statePill = pill(n.state);
@@ -374,8 +389,8 @@ const PROMPT_LABEL = { human: "Prompt", "task-notification": "Notification", met
   peer: "Message from an agent", interrupted: "Interrupted", "local-command": "Local command" };
 let judgeSeq = 0;
 
-function openJudge(sid, aid) {
-  ui.judge = { sid, aid, from: null, sig: "", open: new Map() };
+function openJudge(sid, aid, focusEvent = null) {
+  ui.judge = { sid, aid, from: null, sig: "", open: new Map(), focus: focusEvent };
   // nada del agente anterior mientras llega el nuevo
   for (const id of ["j-title", "j-sub", "j-cost", "j-count"]) $(id).textContent = "";
   setContentId($("j-task"), null);
@@ -451,7 +466,33 @@ function paintJudge(j, v) {
   const focusedKey = document.activeElement?.closest?.("#j-items details")?.dataset.key;
   $("j-items").replaceChildren(...v.items.map((it, i) => itemNode(j, it, i === lastTurn)));
   if (focusedKey) $("j-items").querySelector(`details[data-key="${CSS.escape(focusedKey)}"] > summary`)?.focus();
+  if (j.target) $("j-items").querySelector(`details[data-key="${CSS.escape(j.target)}"]`)?.parentElement.classList.add("is-target");
+  if (j.focus !== null && j.focus !== undefined) goToEvent(j, v);
   fillContent($("judge"));
+}
+
+// Llevar a la alerta pulsada en el árbol: su turno abierto, centrado y con el foco.
+function goToEvent(j, v) {
+  const li = $("j-items").querySelector(`li[data-sig~="${j.focus}"]`);
+  if (!li) {
+    if (v.start > 0) { j.from = 0; j.sig = ""; renderJudge(); }   // está en turnos anteriores
+    else j.focus = null;
+    return;
+  }
+  j.focus = null;
+  const d = li.querySelector("details");
+  j.open.set(d.dataset.key, true);
+  j.target = d.dataset.key;              // el resaltado sobrevive a los ticks (como el plegado)
+  d.open = true;
+  li.classList.add("is-target");
+  li.scrollIntoView({ block: "center" });
+  d.querySelector("summary").focus({ preventScroll: true });
+}
+
+function signalChips(sigs) {
+  // error y bloqueo ya tienen su badge propio en el turno
+  return (sigs || []).filter((x) => x.kind !== "error" && x.kind !== "blocked")
+    .map((x) => el("span", { className: "sig-chip", "data-alert": String(x.alert), text: SIGNAL_LABEL[x.kind] || x.kind }));
 }
 
 function details(j, key, openByDefault, summary, body) {
@@ -480,9 +521,9 @@ function itemNode(j, it, isLast) {
   if (it.kind !== "turn") {
     const e = it.event;
     const label = it.kind === "prompt" ? PROMPT_LABEL[e.origin] || "Prompt" : SYSTEM_LABEL[e.kind] || e.kind;
-    return el("li", { className: `t-item t-${it.kind}` },
+    return el("li", { className: `t-item t-${it.kind}`, "data-sig": (it.signals || []).map((x) => x.event).join(" ") },
       details(j, `e${e.id}`, false,
-        [el("span", { className: "t-kind", text: label }), el("time", { text: hhmmss(e.ts) })],
+        [el("span", { className: "t-kind", text: label }), el("time", { text: hhmmss(e.ts) }), ...signalChips(it.signals)],
         pre(e.id)));
   }
   const tools = new Map();
@@ -500,6 +541,7 @@ function itemNode(j, it, isLast) {
     toolText ? el("span", { className: "t-tools", text: toolText, title: toolTitle }) : null,
     errors ? el("span", { className: "badge", title: `${errors} tool results that failed` }, icon(ALERT), el("span", { text: String(errors) })) : null,
     blocked ? el("span", { className: "badge badge-muted", text: `${blocked} blocked` }) : null,
+    ...signalChips(it.signals),
     el("span", { className: "t-cost", text: `${money(it.cost)} · ${out}`,
       title: it.implausible ? "Claude Code wrote an output token count far below what this turn wrote: the real output, and cost, are higher" : "Estimated cost and output tokens of this turn" }),
   ];
@@ -513,7 +555,8 @@ function itemNode(j, it, isLast) {
         el("span", { className: "t-res-h", text: resLabel }),
         r ? pre(r.id) : null));
   }));
-  return el("li", { className: "t-turn" }, details(j, it.request_id || `e${it.events[0].id}`, isLast, summary, body));
+  return el("li", { className: "t-turn", "data-sig": (it.signals || []).map((x) => x.event).join(" ") },
+    details(j, it.request_id || `e${it.events[0].id}`, isLast, summary, body));
 }
 
 // Rellena los <pre data-content> visibles (fuera de <details> cerrados) con su texto.

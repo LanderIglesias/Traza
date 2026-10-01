@@ -61,9 +61,11 @@ argumentos, resultados), que es lo que hace falta para juzgar calidad.
 - Es un formato **interno, no documentado**; una actualización puede romper el parser
   (mitigación: parser tolerante, tipos desconocidos contados y visibles, tests sobre fixtures).
 - El estado "esperando tu permiso" no es visible.
-- El estado "pensando" solo se deduce del `mtime` del fichero: las líneas de una respuesta se
-  escriben **todas de golpe al terminarla**, no en streaming [verificado en vivo, `findings.md`
-  §1]. Su `timestamp` es el de generación de cada bloque, no el de escritura.
+- El estado "pensando" solo se deduce del `mtime` del fichero. En el hilo principal las líneas
+  de una respuesta se escriben **todas de golpe al terminarla** [verificado en vivo, F0,
+  `findings.md` §1]; **en los subagentes de 2.1.284 no**: se escriben mientras se genera
+  (`findings.md` §F4, y la regla de §7.1). Su `timestamp` es el de generación de cada bloque,
+  no el de escritura.
 - El campo `apiBlockIndex` solo existe en algunas versiones (sí en la extensión 2.1.267, no en la
   CLI 2.1.226) [verificado]: el parser no depende de él.
 - Las llamadas internas de Claude Code (p. ej. a Haiku para títulos) **no aparecen** en el JSONL
@@ -515,16 +517,27 @@ medirlas en disco cada pocos meses o al ver un estado raro en el panel.
 Se muestran como **señal**, no veredicto; al pulsarlas llevan a los eventos que las causan.
 Los umbrales viven en un solo bloque de constantes.
 
-| Señal | Regla | Muestra alerta |
+| Señal | Regla (calibrada con los datos, findings.md §F6) | Alerta |
 |---|---|---|
-| Error de herramienta | `tool_result.is_error` **sin** `denial` (se ejecutó y falló) | sí |
-| Bloqueo | `tool_result.is_error` **con** `denial` (hook, regla de permisos, usuario, auto mode): no se ejecutó; se cuenta aparte, no es un fallo | sí |
-| `api_error` / compactación | subtipos de `system` | sí |
-| Bucle | mismo agente, misma herramienta, mismo hash de JSON canónico (claves ordenadas, sin espacios) ≥ 3 veces, **sin error intermedio** | sí |
-| Reintento que también falló | error → misma herramienta → error | sí |
-| Reintento que funcionó | error → misma herramienta → éxito | no (informativa) |
-| Herramienta colgada | `tool_use` sin resultado > 10 min, **excepto** si lanza un subagente que sigue escribiendo | sí |
-| Coste por token de salida | columna ordenable | no |
+| Error de herramienta | `tool_result.is_error` **sin** `denial` (se ejecutó y falló). En disco: 249 | sí (rojo) |
+| Bloqueo | `tool_result.is_error` **con** `denial` (hook, regla de permisos, usuario, auto mode): no se ejecutó. 705 | no (gris: no es un fallo) |
+| `api_error` | subtipo de `system`. 7 | sí |
+| Compactación | `compact_boundary`. 13 | no (gris: informa de que el agente perdió contexto) |
+| Bucle | la misma llamada (herramienta + hash del JSON canónico del input) **3 veces seguidas** (ninguna otra llamada del agente entre medias), todas sin error. Una alerta por racha. "3 veces en cualquier sitio" daba 90 alertas, casi todas legítimas (relecturas, `pytest` repetidos, capturas); "seguidas" da 2, las dos bucles de verdad | sí |
+| Reintento que también falló | error real → **siguiente uso de la misma herramienta** (con cualquier input) → error real. Un bloqueo no cuenta como error aquí: bloquear y repetir es el flujo normal de un hook. 34; revisadas 8 al azar: todas agentes atascados de verdad | sí |
+| Reintento que funcionó | error real → siguiente uso de la misma herramienta → éxito. 196 | no (gris) |
+| Herramienta colgada | herramienta en vuelo según §7.1 (de la **última** respuesta, sin resultado y sin prompt posterior) desde hace > 10 min, **excepto** si es el `tool_use` que lanzó un subagente cuyo fichero se escribió hace < 10 min (trabaja, no está colgada). 1 | sí |
+| Coste por token de salida | columna ordenable del árbol (F4) | no |
+
+Implementación: `traza/signals.py`, funciones puras con los umbrales en un bloque de
+constantes; un test por señal, incluidos los tres casos negativos del plan (bucle con error
+intermedio, reintento que funcionó, subagente de larga duración), cada uno verificado con una
+mutación. Dónde se ven: la fila de sesión (badge rojo con el total de alertas y su desglose en
+el título; bloqueos aparte en gris), el nodo del árbol (badge **pulsable**: abre la vista de
+juicio en el turno de su alerta más reciente, desplegado, centrado y con el foco) y cada turno
+(chips; las alertas en rojo, las informativas en gris). Los recuentos de errores/bloqueos de F4
+salen ahora de las señales: una sola definición. Coste: 64 ms para todo el disco en cada
+`overview` (196 → 253 ms).
 
 ### 7.3 Turno
 
@@ -600,6 +613,8 @@ queda ninguna, el test se salta con ese motivo. Las copias (sesiones que compart
   XSS (solo `textContent` + CSP `script-src 'self'` sin inline), sin CSRF (todo es GET de solo
   lectura), sin traversal (el id de sesión solo llega a SQLite como parámetro).
 - **Todo** el texto de los JSONL se pinta con `textContent`, nunca `innerHTML` (XSS).
+- `Cache-Control: no-cache` en la página y los estáticos (F6): sin él, Chrome reutilizó por caché
+  heurística un `index.html` viejo con un `app.js` nuevo y la página se rompió al actualizar.
 - Solo lectura sobre `~/.claude/`: traza nunca escribe ahí.
 - Estado propio en `~/.traza/` (config + `traza.db`), separado de los datos de Claude Code.
 

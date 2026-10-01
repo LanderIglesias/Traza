@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import db
+from . import signals as sig
 from .parser import prompt_text
 from .pricing import request_cost
 
@@ -56,15 +57,7 @@ def session_state(agent_states, idle_for_s: float) -> str:
     return "idle" if st == "done" else st
 
 
-def _parse_ts(ts: str | None) -> datetime | None:
-    """Timestamp ISO-8601 del JSONL ("…Z") a datetime con zona; None si falta o no se entiende.
-    Sin zona se toma como UTC (los JSONL escriben UTC): comparar uno sin zona con uno con zona
-    lanzaría TypeError y tumbaría /api/overview entero."""
-    try:
-        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    except (AttributeError, ValueError):
-        return None
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+_parse_ts = sig.parse_ts   # sin zona = UTC; ilegible = None (no tumba el panel)
 
 
 def _local_midnight(now: float, tz=None) -> datetime:
@@ -149,7 +142,42 @@ def _agent_states(conn, now: float):
     return agent_st, in_flight
 
 
-def overview(conn, now: float | None = None, states=None) -> dict:
+_SIG_COLS = ("id", "kind", "tool_name", "tool_use_id", "input_hash", "is_error", "denial", "ts",
+             "request_id")
+
+
+def agent_signal_map(conn, now: float, session_id: str | None = None) -> dict:
+    """{(sesión, agente): [señal]} (§7.2), de una sesión o de todas. Un subagente cuyo fichero
+    se escribió hace menos de HUNG_AFTER_S está trabajando: el tool_use que lo lanzó no cuenta
+    como colgado."""
+    where, args = ("WHERE session_id = ?", (session_id,)) if session_id else ("", ())
+    by_agent = defaultdict(list)
+    for r in conn.execute(f"""SELECT session_id, agent_id, {', '.join(_SIG_COLS[:-2])},
+                                     timestamp, request_id
+                              FROM events {where} ORDER BY session_id, agent_id, id""", args):
+        by_agent[(r[0], r[1])].append(dict(zip(_SIG_COLS, r[2:])))
+    live = defaultdict(set)
+    for sid, tuid in conn.execute("""SELECT a.session_id, a.parent_tool_use_id FROM agents a
+                                     JOIN files f USING (session_id, agent_id)
+                                     WHERE a.parent_tool_use_id IS NOT NULL AND f.mtime_ns > ?""",
+                                  (int((now - sig.HUNG_AFTER_S) * 1e9),)):
+        live[sid].add(tuid)
+    return {k: sig.agent_signals(evs, now, live[k[0]]) for k, evs in by_agent.items()}
+
+
+def _signal_summary(signals: list[dict]) -> dict:
+    """Recuentos para una fila o un nodo. errors/blocked salen de las señales: una sola
+    definición (F4 los contaba con su propio SQL)."""
+    counts = defaultdict(int)
+    for x in signals:
+        counts[x["kind"]] += 1
+    alerts = [x for x in signals if x["alert"]]
+    return {"signals": dict(counts), "alerts": len(alerts),
+            "alert_event": alerts[-1]["event"] if alerts else None,   # la más reciente
+            "errors": counts["error"] + counts["api_error"], "blocked": counts["blocked"]}
+
+
+def overview(conn, now: float | None = None, states=None, signals=None) -> dict:
     """Todo lo que necesita la pantalla principal en una sola respuesta. `states`: el resultado
     de _agent_states si ya se calculó (session_summary lo reutiliza para el árbol)."""
     now = time.time() if now is None else now
@@ -158,12 +186,10 @@ def overview(conn, now: float | None = None, states=None) -> dict:
                     "SELECT session_id, project, title FROM sessions")}
     agents = dict(conn.execute("SELECT session_id, COUNT(*) FROM agents GROUP BY session_id"))
     mtimes = dict(conn.execute("SELECT session_id, MAX(mtime_ns) FROM files GROUP BY session_id"))
-    # errores reales vs bloqueos (la herramienta no llegó a ejecutarse: hook, permisos…)
-    errors = {sid: (e, b) for sid, e, b in conn.execute("""
-        SELECT session_id,
-               COALESCE(SUM(kind = 'api_error' OR (is_error = 1 AND denial IS NULL)), 0),
-               COALESCE(SUM(is_error = 1 AND denial IS NOT NULL), 0)
-        FROM events GROUP BY session_id""")}
+    # señales (§7.2): errores reales, bloqueos (la herramienta no llegó a ejecutarse), bucles…
+    per_session = defaultdict(list)
+    for (sid, _), xs in (signals or agent_signal_map(conn, now)).items():
+        per_session[sid] += xs
     agent_st, in_flight = states or _agent_states(conn, now)
     agent_types = {(sid, aid): t for sid, aid, t in conn.execute(
         "SELECT session_id, agent_id, agent_type FROM agents")}
@@ -189,7 +215,7 @@ def overview(conn, now: float | None = None, states=None) -> dict:
         s["state"] = session_state(states.get(sid, []), idle_for)
         s["live"] = s["state"] != "idle"
         s["agents"] = agents.get(sid, 0)
-        s["errors"], s["blocked"] = errors.get(sid, (0, 0))
+        s.update(_signal_summary(per_session[sid]))
         s["last_activity"] = _iso(mtimes.get(sid, 0))
         s.update(_money(own[sid]))
         s["inherits"] = [{"from": o, "requests": len(cs), **_money(cs)}
@@ -222,7 +248,8 @@ def overview(conn, now: float | None = None, states=None) -> dict:
                        "SELECT COUNT(*) FROM events WHERE kind = 'unknown'").fetchone()[0],
                    "ignored": sum(ignored.values()), "ignored_types": len(ignored),
                    # output_tokens mal escrito por Claude Code: aviso contado (design.md §8)
-                   "implausible": len(db.implausible_output(conn))},
+                   "implausible": len(db.implausible_output(conn)),
+                   "ignored_by_type": dict(sorted(ignored.items(), key=lambda kv: (-kv[1], kv[0])))},
         "sessions": sorted(sessions.values(), key=lambda s: s["last_activity"], reverse=True),
     }
 
@@ -232,7 +259,9 @@ def session_summary(conn, session_id: str, now: float | None = None,
     """Resumen para el panel de trabajo (§7, clic en una sesión en F3)."""
     now = time.time() if now is None else now
     states = _agent_states(conn, now)   # una vez para la fila y el árbol
-    s = next((s for s in overview(conn, now, states)["sessions"] if s["id"] == session_id), None)
+    signals = agent_signal_map(conn, now)
+    s = next((s for s in overview(conn, now, states, signals)["sessions"]
+              if s["id"] == session_id), None)
     if s is None:
         return None
     s["models"] = dict(conn.execute("""
@@ -243,7 +272,7 @@ def session_summary(conn, session_id: str, now: float | None = None,
         "SELECT first_ts FROM files WHERE session_id = ? AND agent_id = 'main'",
         (session_id,)).fetchone()
     s["started"] = s["started"][0] if s["started"] else None
-    s["tree"] = agent_tree(conn, session_id, now, states, root)
+    s["tree"] = agent_tree(conn, session_id, now, states, root, signals)
     return s
 
 
@@ -264,7 +293,7 @@ def _task(conn, session_id: str, agent_id: str, root) -> str | None:
 
 
 def agent_tree(conn, session_id: str, now: float | None = None, states=None,
-               root=None) -> list[dict]:
+               root=None, signals=None) -> list[dict]:
     """Nodos del árbol de agentes de una sesión (§7, F4); el frontend los anida por `parent`.
     Coste propio = peticiones de las que este agente es dueño (§6.2: lo heredado de otra sesión
     no cuenta); acumulado = propio + el de todo su subárbol."""
@@ -281,11 +310,7 @@ def agent_tree(conn, session_id: str, now: float | None = None, states=None,
     # ponytail: calcula los estados de TODAS las sesiones para pintar una (~150 ms con 26k
     # eventos). Si pesa, filtrar las consultas de _agent_states por sesión.
     states, _ = states or _agent_states(conn, now)
-    signals = {aid: (e, b) for aid, e, b in conn.execute("""
-        SELECT agent_id,
-               COALESCE(SUM(kind = 'api_error' OR (is_error = 1 AND denial IS NULL)), 0),
-               COALESCE(SUM(is_error = 1 AND denial IS NOT NULL), 0)
-        FROM events WHERE session_id = ? GROUP BY agent_id""", (session_id,))}
+    signals = signals or agent_signal_map(conn, now, session_id)
     owner_agent = dict(conn.execute("""SELECT request_id, owner_agent_id FROM request_owner
                                        WHERE owner_session_id = ?""", (session_id,)))
     costs, outputs, written, suspect = (defaultdict(list), defaultdict(list), defaultdict(int),
@@ -313,7 +338,6 @@ def agent_tree(conn, session_id: str, now: float | None = None, states=None,
     nodes = []
     for aid, agent_type, description, started in rows:
         outs = outputs[aid]
-        errors, blocked = signals.get(aid, (0, 0))
         nodes.append({
             "id": aid, "type": agent_type, "description": description,
             "parent": parents.get(aid), "orphan": orphans.get(aid),
@@ -329,7 +353,7 @@ def agent_tree(conn, session_id: str, now: float | None = None, states=None,
             "implausible_requests": suspect[aid],
             **_money(costs[aid]),
             "total": _money(subtree(aid, {aid})),
-            "errors": errors, "blocked": blocked, "started": started,
+            **_signal_summary(signals.get((session_id, aid), [])), "started": started,
         })
     return nodes
 
@@ -421,7 +445,9 @@ def agent_view(conn, session_id: str, agent_id: str, root=None, now: float | Non
 
     Turno = una petición del modelo (su texto y sus tool_use) con el tool_result de cada
     herramienta emparejado. Prompts y eventos de sistema van como elementos propios."""
-    node = next((n for n in agent_tree(conn, session_id, now, root=root)
+    now = time.time() if now is None else now
+    signals = agent_signal_map(conn, now, session_id)
+    node = next((n for n in agent_tree(conn, session_id, now, root=root, signals=signals)
                  if n["id"] == agent_id), None)
     if node is None:
         return None
@@ -463,6 +489,15 @@ def agent_view(conn, session_id: str, agent_id: str, root=None, now: float | Non
             items.append({"kind": "prompt", "event": {**ev, "origin": origin}})
         else:                                # api_error, compact_boundary, notificación, unknown
             items.append({"kind": "system", "event": ev})
+
+    # señales de cada turno: las de cualquiera de sus eventos o de sus resultados
+    by_event = defaultdict(list)
+    for x in signals.get((session_id, agent_id), []):
+        by_event[x["event"]].append({"kind": x["kind"], "alert": x["alert"], "event": x["event"]})
+    for it in items:
+        evs = it["events"] if it["kind"] == "turn" else [it["event"]]
+        ids = [e["id"] for e in evs] + [e["result"]["id"] for e in evs if e.get("result")]
+        it["signals"] = [x for i in ids for x in by_event.get(i, [])]
 
     # los últimos `limit` turnos antes de `before`, con lo que haya entre ellos
     end = len(items) if before is None else max(0, min(before, len(items)))
