@@ -148,6 +148,9 @@ Posible historia para el README: el 92 % de los reintentos que funcionan **cambi
 - **Cifras del README y de las capturas con los números corregidos en F4** (el coste total
   subió de $981,05 a $983,43 al corregir `output_tokens`): regenerarlas al final, no copiar
   cifras de fases anteriores.
+- README: explicar por qué el coste interno dice **"at least"** (solo cuenta modelos que la
+  sesión nunca usa; las llamadas internas a un modelo que también usa no se pueden separar,
+  design.md §4.1), junto a "estimated" y al `?` de los modelos sin precio: es la misma política.
 - README, límites de lo que Claude Code escribe (no son bugs de traza): subagentes sin fin
   registrado en disco (3 de 93) se quedan en "idle" con tooltip; `output_tokens` mal escrito
   (aviso de plausibilidad); skill forks sin enlazar a su padre (decisión, design.md §6.1).
