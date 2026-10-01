@@ -487,8 +487,16 @@ Decisiones de F3 (revisión del brief, 30-09-2026):
 - **Clic en una sesión (F3):** la fila queda seleccionada y el panel de trabajo muestra su
   resumen: título, proyecto, inicio, última actividad, modelos (con nº de peticiones), coste
   propio y heredado, nº de agentes. F4 sustituye ese resumen por el árbol.
-- **Tipografía:** Manrope (OFL), servida desde `static/` con su `OFL.txt`; ninguna petición a
-  CDNs ni a Google Fonts (100 % local).
+- **Tipografía (revisada el 01-10-2026, `typeset`):** dos familias, cada una con su papel.
+  **Manrope** (OFL, servida desde `static/` con su `OFL.txt`) es la voz de display: cifras
+  grandes (28 px), títulos (20–22 px) y cabeceras de sección (16 px). El texto pequeño y los
+  datos (12–14 px: tablas, etiquetas, metadatos, píldoras) van en la **fuente de interfaz del
+  sistema** (`Segoe UI Variable` en Windows, la del sistema en Mac/Linux). Motivo, medido en
+  pantalla: Manrope es variable pero **sin hinting** (sin `fpgm`/`cvt`), y a 12 px en Windows se
+  come los espacios ("Output tok." se leía "Outputtok."); el autor la veía "cortada y
+  pixelada". Escala: 12 / 13 / 14 / 16 / 20 / 22 / 28 px (antes 12 tamaños, cinco a menos de
+  1,5 px entre sí); el peso 800 solo en display (antes en 25 sitios). Ninguna petición a CDNs
+  ni a Google Fonts (100 % local).
 - **Idioma de la interfaz:** inglés.
 
 - **Árbol:** colapsable; el estado de colapsado vive en memoria del JS y los ticks SSE no lo

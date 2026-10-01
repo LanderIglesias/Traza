@@ -362,3 +362,10 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
   que costaría pagando por token), no un gasto. Cambiado a "Value at API prices" / "Own value"
   en tarjetas, columnas, títulos y barra de salud; el cálculo no cambia. Pendiente de decidir:
   comparar con la cuota mensual del usuario (necesita que la configure).
+- **Tipografía "cortada y pixelada" (día de uso).** Manrope es variable (peso 200–800) pero sin
+  hinting; a 12–13 px en Windows se come los espacios entre palabras y desiguala los trazos
+  (comparativa a 1× ampliada: "Output tok." → "Outputtok."). Segoe UI Variable, con hinting, se
+  lee limpia a los mismos tamaños. Decisión del autor (de tres opciones): **mixta** — Manrope
+  para display (≥ 16 px), fuente del sistema para texto pequeño y datos. Escala reducida a 7
+  tamaños con papel y el 800 solo en display. Detector de impeccable limpio; verificado en
+  escritorio (1×) y móvil (390 px).

@@ -17,7 +17,7 @@ web
 ## Product Purpose
 
 A local, read-only web panel that opens Claude Code "like a glass box": the live hierarchy of
-agents and subagents and their state, tokens and **estimated** cost per request, agent, session
+agents and subagents and their state, tokens and **value at API prices** per request, agent, session
 and model, and a timeline of every tool call and result. Success = the author can tell, while a
 session runs, which subagent is burning money and whether its work is any good.
 
@@ -39,7 +39,8 @@ micro-dollar — and honest about what it does not know: `?` instead of invented
 
 - Backend: Python (FastAPI, SSE, SQLite as a disposable cache). Frontend: plain HTML/CSS/JS
   modules, no framework, no build step.
-- Cost is always labelled **estimated** (public prices applied to past sessions; not the bill).
+- Money is always labelled **value at API prices** (public per-token prices applied to past
+  sessions): what that usage would cost paying per token, not what a subscription pays and not a bill.
 - Unknown values show as `?`, never as 0 or a plausible guess.
 - Thinking text is empty on disk: the panel shows actions and results, not reasoning.
 - Content from transcripts is untrusted: always rendered as text (`textContent`), never HTML.
