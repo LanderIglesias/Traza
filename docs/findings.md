@@ -272,3 +272,12 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
 - **Primer arranque tras subir versión:** durante el escaneo inicial (~2 s) `/api/overview`
   responde con 0 sesiones y una vista de agente da 404. Es el comportamiento desde F3 (el
   servidor no espera al primer escaneo); el siguiente tick lo corrige. Sin cambio.
+- **`/code-review` de a498c8a..fc7c1be, 4 hallazgos, todos corregidos:** el turno abierto por
+  defecto quedaba "elegido por el usuario" para siempre (`toggle` salta también al abrirlo
+  desde código: ahora la preferencia se fija en el clic sobre `<summary>`; verificado en Chrome:
+  al llegar un turno nuevo, el anterior se cierra); al cambiar de agente se veía durante
+  milisegundos el encargo del anterior (ahora la vista se vacía al abrir; verificado: secuencia
+  vacío → B); un agente `done` sin texto decía "still working"; un agente reanudado tras
+  entregar mostraba lo de la primera vez (el resultado del padre solo vale si es posterior a su
+  última línea, como "done"; test). Rendimiento revisado y sin cambio: `implausible_output`
+  tarda 20 ms con la caché real (overview 196 ms, session_summary 306 ms, vista de main 228 ms).

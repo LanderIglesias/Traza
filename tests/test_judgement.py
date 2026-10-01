@@ -188,3 +188,26 @@ def test_desde_una_posicion_hasta_el_final(conn, root):
     full = views.agent_view(conn, "sess-A", "main", root=root)
     got = views.agent_view(conn, "sess-A", "main", root=root, limit=2, start_at=1)
     assert got["start"] == 1 and got["items"] == full["items"][1:]
+
+
+def test_agente_reanudado_devuelve_lo_ultimo_no_lo_primero(tmp_path, root):
+    # Primer plano: el padre recibió "hecho" (10:00:20). Luego se reanudó (SendMessage), volvió a
+    # trabajar y terminó (notificación): lo devuelto es su último texto, no el resultado viejo.
+    main = root / "proj" / "sess-A.jsonl"
+    main.write_text(main.read_text(encoding="utf-8").replace(
+        '"toolUseResult":{"isAsync":true,"status":"async_launched","agentId":"abc",'
+        '"description":"Buscar x"},', ""), encoding="utf-8", newline="\n")
+    sub = root / "proj" / "sess-A" / "subagents" / "agent-abc.jsonl"
+    _append(sub, {"type": "user", "uuid": "p9", "timestamp": "2026-01-01T10:00:25.000Z",
+                  "message": {"role": "user", "content": "y ahora busca y"}})
+    _append(sub, {"type": "assistant", "uuid": "a9", "requestId": "req_s9",
+                  "timestamp": "2026-01-01T10:00:26.000Z", "message": {
+                      "model": "claude-haiku-4-5-20251001", "stop_reason": "end_turn",
+                      "content": [{"type": "text", "text": "y tampoco aparece."}],
+                      "usage": _usage(5)}})
+    c = db.connect(tmp_path / "t3.db")
+    scan(c, root)
+    j = views.agent_view(c, "sess-A", "abc", root=root)
+    assert j["agent"]["state"] == "done"            # la notificación (10:00:30) es posterior
+    assert j["result"]["source"] == "final_text"
+    assert _content(c, root, [j["result"]["id"]])[j["result"]["id"]]["text"] == "y tampoco aparece."

@@ -371,6 +371,11 @@ let judgeSeq = 0;
 
 function openJudge(sid, aid) {
   ui.judge = { sid, aid, from: null, sig: "", open: new Map() };
+  // nada del agente anterior mientras llega el nuevo
+  for (const id of ["j-title", "j-sub", "j-cost", "j-count"]) $(id).textContent = "";
+  setContentId($("j-task"), null);
+  setContentId($("j-result"), null);
+  $("j-items").replaceChildren();
   renderPanel();
   $("j-back").focus();
 }
@@ -416,18 +421,19 @@ function paintJudge(j, v) {
   $("j-cost").textContent = money(a.cost, a.unpriced);
 
   $("j-task-block").hidden = v.task === null;
-  if (v.task !== null) $("j-task").dataset.content = v.task;
+  if (v.task !== null && $("j-task").dataset.content !== String(v.task)) setContentId($("j-task"), v.task);
 
   const res = $("j-result");
   $("j-result-block").hidden = a.id === "main";
-  delete res.dataset.content;
   if (v.result) {
     $("j-result-h").textContent = v.result.source === "parent_result" ? "Returned to parent" : "Final answer";
-    res.dataset.content = v.result.id;
+    if (res.dataset.content !== String(v.result.id)) setContentId(res, v.result.id);
   } else {
     $("j-result-h").textContent = "Returned to parent";
-    res.textContent = a.state === "idle"
-      ? "Nothing returned: no end is recorded on disk for this agent."
+    setContentId(res, null);
+    // 3. tres casos: terminó sin texto, sin fin registrado, o sigue trabajando
+    res.textContent = a.state === "done" ? "The agent finished without writing any text."
+      : a.state === "idle" ? "Nothing returned: no end is recorded on disk for this agent."
       : "Nothing yet: the agent is still working.";
   }
 
@@ -444,13 +450,21 @@ function paintJudge(j, v) {
 }
 
 function details(j, key, openByDefault, summary, body) {
-  const d = el("details", { "data-key": key }, el("summary", {}, ...summary), body);
+  const head = el("summary", {}, ...summary);
+  const d = el("details", { "data-key": key }, head, body);
   d.open = j.open.get(key) ?? openByDefault;   // lo que el usuario abrió o cerró se respeta
-  d.addEventListener("toggle", () => {
-    j.open.set(key, d.open);
-    if (d.open) fillContent(d);
-  });
+  // Solo el usuario fija la preferencia (clic, Enter o Espacio sobre <summary>): "toggle" salta
+  // también cuando el código abre el último turno, y eso no es una elección suya.
+  head.addEventListener("click", () => j.open.set(key, !d.open));
+  d.addEventListener("toggle", () => { if (d.open && j.open.get(key)) fillContent(d); });
   return d;
+}
+
+function setContentId(node, id) {
+  node.textContent = "";                 // "Loading…" hasta que llegue el nuevo
+  delete node.dataset.state;
+  if (id === null) delete node.dataset.content;
+  else node.dataset.content = id;
 }
 
 function pre(id) {

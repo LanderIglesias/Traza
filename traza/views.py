@@ -468,14 +468,19 @@ def agent_view(conn, session_id: str, agent_id: str, root=None, now: float | Non
 
     result = None
     if agent_id != "main" and node["state"] == "done":
-        # primer plano: lo que recibió el padre; segundo plano o skill fork: su último texto
-        parent = conn.execute("""SELECT e.id, e.agent_status FROM events e JOIN agents a
-                                   ON a.session_id = e.session_id
+        # primer plano: lo que recibió el padre; segundo plano, skill fork o agente reanudado
+        # después de entregar (el resultado del padre ya no es lo último que hizo): su último
+        # texto. Misma regla temporal que "done" (§7.1).
+        parent = conn.execute("""SELECT e.id, e.agent_status, e.timestamp FROM events e
+                                 JOIN agents a ON a.session_id = e.session_id
                                   AND a.parent_tool_use_id = e.tool_use_id
                                  WHERE a.session_id = ? AND a.agent_id = ?
                                    AND e.kind = 'tool_result' ORDER BY e.id LIMIT 1""",
                               (session_id, agent_id)).fetchone()
-        if parent and parent[1] != "async_launched":
+        last_ts = conn.execute("""SELECT MAX(timestamp) FROM events WHERE session_id = ?
+                                  AND agent_id = ? AND kind <> 'task_notification'""",
+                               (session_id, agent_id)).fetchone()[0]
+        if parent and parent[1] != "async_launched" and (parent[2] or "") >= (last_ts or ""):
             result = {"id": parent[0], "source": "parent_result"}
         else:
             last = conn.execute("""SELECT MAX(id) FROM events WHERE session_id = ?
