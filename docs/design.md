@@ -366,6 +366,15 @@ Implementado en F5 (`views.read_content`, `GET /api/content?ids=1,2,3`):
 
 ### 6.6 Coste
 
+**Qué es la cifra (día de uso, 01-10-2026):** el **valor a precios públicos de la API**, es
+decir, lo que costaría ese uso pagando por token. **No** es lo que paga quien usa Claude Code
+con suscripción (Pro/Max: cuota fija con límites de uso). La interfaz lo dice así ("Value at API
+prices", "Own value") y no "Estimated cost", que hacía creer al autor, que usa suscripción, que
+había gastado 277 $ en una sesión. Para un suscriptor el número sirve para otra cosa: cuánto le
+rinde la cuota. Desglose de esa sesión (Opus 5.5, 1.214 peticiones): ~116 $ de lectura de caché
+(579 M de tokens: cada petición reenvía toda la conversación), ~70 $ de escritura de caché 1 h,
+~28 $ de salida, ~7 $ de escritura de caché 5 min.
+
 - Calculado **al consultar** desde `requests` × `prices.toml`; no se almacena. Corregir un precio
   corrige todo el historial.
 - Clave de precio: modelo tras **quitar solo el sufijo de fecha** (`claude-haiku-4-5-20251001`

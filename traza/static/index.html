@@ -32,7 +32,7 @@
     <section class="cards" aria-label="Summary">
       <article class="card card-cost">
         <p class="figure" id="window-cost">–</p>
-        <p class="label">Estimated cost · all sessions on disk</p>
+        <p class="label" title="What these sessions would cost paying per token at public API prices. Not what a subscription pays.">Value at API prices · all sessions on disk</p>
         <p class="note" id="window-note" hidden></p>
       </article>
 
@@ -48,7 +48,7 @@
 
       <article class="card card-stat">
         <p class="figure" id="today-cost">–</p>
-        <p class="label">Cost today · estimated</p>
+        <p class="label" title="What today would cost paying per token at public API prices. Not what a subscription pays.">Today · value at API prices</p>
       </article>
 
       <article class="card card-stat">
@@ -71,7 +71,7 @@
         <div class="panel-empty" id="panel-empty">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M3.5 9.5h17M8 14h5"/></svg>
           <h2 id="panel-h">Select a session</h2>
-          <p>Its agents, what each one is doing and what each one cost show up here.</p>
+          <p>Its agents, what each one is doing and what each one would cost at API prices show up here.</p>
         </div>
         <div class="panel-body" id="panel-body" hidden>
           <header class="panel-top">
@@ -81,7 +81,7 @@
             </div>
             <div class="pt-right">
               <span class="pill" id="p-state"></span>
-              <span class="pt-cost" id="p-cost" title="Estimated cost of this session's own requests"></span>
+              <span class="pt-cost" id="p-cost" title="Value at API prices of this session's own requests (not what a subscription pays)"></span>
             </div>
           </header>
           <p class="inherit" id="p-inherit" hidden></p>
@@ -102,10 +102,10 @@
                 <tr>
                   <th scope="col">Agent</th>
                   <th scope="col">State</th>
-                  <th scope="col" class="num" data-sort="cost"><button type="button">Own cost</button></th>
-                  <th scope="col" class="num" data-sort="total"><button type="button" title="Own cost plus every subagent below it">Incl. subagents</button></th>
+                  <th scope="col" class="num" data-sort="cost"><button type="button" title="Value at API prices of its own requests">Own value</button></th>
+                  <th scope="col" class="num" data-sort="total"><button type="button" title="Own value plus every subagent below it">Incl. subagents</button></th>
                   <th scope="col" class="num">Output tok.</th>
-                  <th scope="col" class="num" data-sort="per_out"><button type="button" title="Own cost per million output tokens">$ / 1M output</button></th>
+                  <th scope="col" class="num" data-sort="per_out"><button type="button" title="Own value at API prices per million output tokens">$ / 1M output</button></th>
                 </tr>
               </thead>
               <tbody id="tree-rows"></tbody>
@@ -121,7 +121,7 @@
               </div>
               <div class="pt-right">
                 <span class="pill" id="j-state"></span>
-                <span class="j-cost" id="j-cost" title="Own cost of this agent"></span>
+                <span class="j-cost" id="j-cost" title="Value at API prices of this agent's own requests"></span>
               </div>
             </header>
             <div class="j-block" id="j-task-block">

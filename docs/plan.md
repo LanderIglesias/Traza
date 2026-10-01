@@ -148,6 +148,8 @@ Posible historia para el README: el 92 % de los reintentos que funcionan **cambi
 - **Cifras del README y de las capturas con los números corregidos en F4** (el coste total
   subió de $981,05 a $983,43 al corregir `output_tokens`): regenerarlas al final, no copiar
   cifras de fases anteriores.
+- README: dejar claro desde el primer párrafo que los $ son **valor a precios de la API**, no un
+  gasto (con suscripción no se paga por token); hallazgo del día de uso.
 - README: explicar por qué el coste interno dice **"at least"** (solo cuenta modelos que la
   sesión nunca usa; las llamadas internas a un modelo que también usa no se pueden separar,
   design.md §4.1), junto a "estimated" y al `?` de los modelos sin precio: es la misma política.

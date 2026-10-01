@@ -354,3 +354,11 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
   cada `tool_result`; pasa a `idle` con su texto final, con un prompt que no se contesta
   (interrupción, comando local) o con 10 min sin escribir. Visto en vivo en esta sesión: la
   tarjeta "Live now" decía "Thinking" mientras generaba. No hace falta un estado "enviado".
+
+## Día de uso (01-10-2026)
+
+- **"Estimated cost" se leía como dinero gastado.** El autor usa Claude Code con suscripción y
+  no entendía de dónde salían 200+ $ por sesión. La cifra es el valor a precios de la API (lo
+  que costaría pagando por token), no un gasto. Cambiado a "Value at API prices" / "Own value"
+  en tarjetas, columnas, títulos y barra de salud; el cálculo no cambia. Pendiente de decidir:
+  comparar con la cuota mensual del usuario (necesita que la configure).

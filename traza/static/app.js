@@ -111,7 +111,7 @@ function renderCards(d) {
     `Parser health · ${h.unknown.toLocaleString("en-US")} unknown lines · ` +
     `${h.ignored.toLocaleString("en-US")} lines ignored on purpose (${h.ignored_types} types) · ` +
     (h.implausible ? `${h.implausible.toLocaleString("en-US")} requests with implausibly low output tokens · ` : "") +
-    `costs are estimates from public prices` +
+    `$ = value at public API prices (what paying per token would cost; not what a subscription pays)` +
     // coste interno (llamadas de Claude Code que no se escriben): solo si hay algo medido
     (h.internal_cost ? ` · internal cost measured: at least ${money(h.internal_cost.cost)} in ${plural(h.internal_cost.sessions, "session")}` : "");
   $("health-internal").hidden = !h.internal_cost;
@@ -555,7 +555,7 @@ function itemNode(j, it, isLast) {
     blocked ? el("span", { className: "badge badge-muted", text: `${blocked} blocked` }) : null,
     ...signalChips(it.signals),
     el("span", { className: "t-cost", text: `${money(it.cost)} · ${out}`,
-      title: it.implausible ? "Claude Code wrote an output token count far below what this turn wrote: the real output, and cost, are higher" : "Estimated cost and output tokens of this turn" }),
+      title: it.implausible ? "Claude Code wrote an output token count far below what this turn wrote: the real output, and cost, are higher" : "Value at API prices and output tokens of this turn" }),
   ];
   const body = el("div", { className: "t-body" }, ...it.events.map((e) => {
     if (e.kind === "text") return el("div", { className: "t-text" }, pre(e.id));
