@@ -524,9 +524,9 @@ Los umbrales viven en un solo bloque de constantes.
 | `api_error` | subtipo de `system`. 7 | sí |
 | Compactación | `compact_boundary`. 13 | no (gris: informa de que el agente perdió contexto) |
 | Bucle | la misma llamada (herramienta + hash del JSON canónico del input) **3 veces seguidas** (ninguna otra llamada del agente entre medias), todas sin error. Una alerta por racha. "3 veces en cualquier sitio" daba 90 alertas, casi todas legítimas (relecturas, `pytest` repetidos, capturas); "seguidas" da 2, las dos bucles de verdad | sí |
-| Reintento que también falló | error real → **siguiente uso de la misma herramienta** (con cualquier input) → error real. Un bloqueo no cuenta como error aquí: bloquear y repetir es el flujo normal de un hook. 34; revisadas 8 al azar: todas agentes atascados de verdad | sí |
-| Reintento que funcionó | error real → siguiente uso de la misma herramienta → éxito. 196 | no (gris) |
-| Herramienta colgada | herramienta en vuelo según §7.1 (de la **última** respuesta, sin resultado y sin prompt posterior) desde hace > 10 min, **excepto** si es el `tool_use` que lanzó un subagente cuyo fichero se escribió hace < 10 min (trabaja, no está colgada). 1 | sí |
+| Reintento que también falló | error real → **siguiente uso de la misma herramienta** (con cualquier input) **en una respuesta posterior** → error real. Dos llamadas de la misma respuesta no son un reintento: si una falla, Claude Code cancela las otras y también las registra como error (revisión de F6: quitaba 2 falsos de 37). Un bloqueo no cuenta como error aquí: bloquear y repetir es el flujo normal de un hook. 35; revisadas 8 al azar: todas agentes atascados de verdad | sí |
+| Reintento que funcionó | igual, con éxito. 197 | no (gris) |
+| Herramienta colgada | herramienta en vuelo según §7.1 (de la **última** respuesta, sin resultado y sin prompt posterior) desde hace > 10 min, **excepto** si es el `tool_use` que lanzó un subagente cuyo fichero se escribió hace < 10 min (trabaja, no está colgada), o si el agente está `done` ("terminado" manda, §7.1: lo que dejó sin resultado está abandonado). 0–1 en disco | sí |
 | Coste por token de salida | columna ordenable del árbol (F4) | no |
 
 Implementación: `traza/signals.py`, funciones puras con los umbrales en un bloque de

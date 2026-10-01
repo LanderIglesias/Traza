@@ -34,10 +34,12 @@ def _status(result: dict | None) -> str | None:
     return "ok"
 
 
-def agent_signals(events: list[dict], now: float, live_children=frozenset()) -> list[dict]:
+def agent_signals(events: list[dict], now: float, live_children=frozenset(),
+                  finished: bool = False) -> list[dict]:
     """[{kind, alert, event, tool}] de un agente. `events`: sus eventos en orden (id, kind,
     tool_name, tool_use_id, input_hash, is_error, denial, ts, request_id). `live_children`:
-    tool_use_ids que lanzaron un subagente que sigue escribiendo (no está colgado: trabaja)."""
+    tool_use_ids que lanzaron un subagente que sigue escribiendo (no está colgado: trabaja).
+    `finished`: el agente está "done" (§7.1): nada suyo está colgado, está abandonado."""
     uses = {e["tool_use_id"]: e for e in events if e["kind"] == "tool_use" and e["tool_use_id"]}
     results = {e["tool_use_id"]: e for e in events
                if e["kind"] == "tool_result" and e["tool_use_id"] in uses}
@@ -47,8 +49,10 @@ def agent_signals(events: list[dict], now: float, live_children=frozenset()) -> 
     def add(kind, event_id, tool=None):
         out.append({"kind": kind, "alert": kind in ALERTS, "event": event_id, "tool": tool})
 
-    # 1. una señal por evento, y reintentos (error real → siguiente uso de la misma herramienta)
-    last = {}   # herramienta → estado de su último uso con resultado
+    # 1. una señal por evento, y reintentos (error real → siguiente uso de la misma herramienta
+    #    en una respuesta POSTERIOR: dos llamadas de la misma respuesta no son un reintento; si
+    #    una falla, Claude Code cancela las otras y también las registra como error)
+    last = {}   # herramienta → (estado, requestId) de su último uso con resultado
     for e in events:
         if e["kind"] == "api_error":
             add("api_error", e["id"])
@@ -59,10 +63,12 @@ def agent_signals(events: list[dict], now: float, live_children=frozenset()) -> 
             st = _status(e)
             if st in ("error", "blocked"):
                 add(st, e["id"], tool)
+            req = uses[e["tool_use_id"]]["request_id"]
+            prev_st, prev_req = last.get(tool, (None, None))
             # un bloqueo no es un fallo: bloquear y repetir es el flujo normal de un hook
-            if last.get(tool) == "error" and st in ("error", "ok"):
+            if prev_st == "error" and st in ("error", "ok") and req != prev_req:
                 add("retry_failed" if st == "error" else "retry_ok", e["id"], tool)
-            last[tool] = st
+            last[tool] = (st, req)
 
     # 2. bucle: LOOP_REPEATS llamadas idénticas seguidas, todas sin error
     run_key, run = None, 0
@@ -78,7 +84,8 @@ def agent_signals(events: list[dict], now: float, live_children=frozenset()) -> 
 
     # 3. colgada: herramienta en vuelo (§7.1: de la ÚLTIMA respuesta, sin resultado y sin prompt
     #    posterior) desde hace más de HUNG_AFTER_S, salvo un subagente que sigue trabajando
-    last_req = next((e["request_id"] for e in reversed(events) if e["request_id"]), None)
+    last_req = None if finished else next(
+        (e["request_id"] for e in reversed(events) if e["request_id"]), None)
     last_prompt = max((pos[e["id"]] for e in events if e["kind"] == "prompt"), default=-1)
     for e in events:
         if (e["kind"] == "tool_use" and e["request_id"] == last_req and pos[e["id"]] > last_prompt

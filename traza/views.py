@@ -146,7 +146,7 @@ _SIG_COLS = ("id", "kind", "tool_name", "tool_use_id", "input_hash", "is_error",
              "request_id")
 
 
-def agent_signal_map(conn, now: float, session_id: str | None = None) -> dict:
+def agent_signal_map(conn, now: float, session_id: str | None = None, states=None) -> dict:
     """{(sesión, agente): [señal]} (§7.2), de una sesión o de todas. Un subagente cuyo fichero
     se escribió hace menos de HUNG_AFTER_S está trabajando: el tool_use que lo lanzó no cuenta
     como colgado."""
@@ -162,7 +162,9 @@ def agent_signal_map(conn, now: float, session_id: str | None = None) -> dict:
                                      WHERE a.parent_tool_use_id IS NOT NULL AND f.mtime_ns > ?""",
                                   (int((now - sig.HUNG_AFTER_S) * 1e9),)):
         live[sid].add(tuid)
-    return {k: sig.agent_signals(evs, now, live[k[0]]) for k, evs in by_agent.items()}
+    agent_st = (states or _agent_states(conn, now))[0]   # "done" manda (§7.1)
+    return {k: sig.agent_signals(evs, now, live[k[0]], agent_st.get(k) == "done")
+            for k, evs in by_agent.items()}
 
 
 def _signal_summary(signals: list[dict]) -> dict:
@@ -186,11 +188,12 @@ def overview(conn, now: float | None = None, states=None, signals=None) -> dict:
                     "SELECT session_id, project, title FROM sessions")}
     agents = dict(conn.execute("SELECT session_id, COUNT(*) FROM agents GROUP BY session_id"))
     mtimes = dict(conn.execute("SELECT session_id, MAX(mtime_ns) FROM files GROUP BY session_id"))
+    states = states or _agent_states(conn, now)
+    agent_st, in_flight = states
     # señales (§7.2): errores reales, bloqueos (la herramienta no llegó a ejecutarse), bucles…
     per_session = defaultdict(list)
-    for (sid, _), xs in (signals or agent_signal_map(conn, now)).items():
+    for (sid, _), xs in (signals or agent_signal_map(conn, now, states=states)).items():
         per_session[sid] += xs
-    agent_st, in_flight = states or _agent_states(conn, now)
     agent_types = {(sid, aid): t for sid, aid, t in conn.execute(
         "SELECT session_id, agent_id, agent_type FROM agents")}
     states = defaultdict(list)
@@ -259,7 +262,7 @@ def session_summary(conn, session_id: str, now: float | None = None,
     """Resumen para el panel de trabajo (§7, clic en una sesión en F3)."""
     now = time.time() if now is None else now
     states = _agent_states(conn, now)   # una vez para la fila y el árbol
-    signals = agent_signal_map(conn, now)
+    signals = agent_signal_map(conn, now, states=states)
     s = next((s for s in overview(conn, now, states, signals)["sessions"]
               if s["id"] == session_id), None)
     if s is None:
@@ -309,8 +312,9 @@ def agent_tree(conn, session_id: str, now: float | None = None, states=None,
     orphans = db.orphans(conn, session_id)
     # ponytail: calcula los estados de TODAS las sesiones para pintar una (~150 ms con 26k
     # eventos). Si pesa, filtrar las consultas de _agent_states por sesión.
-    states, _ = states or _agent_states(conn, now)
-    signals = signals or agent_signal_map(conn, now, session_id)
+    pair = states or _agent_states(conn, now)       # (estados, herramientas en vuelo)
+    states = pair[0]
+    signals = signals or agent_signal_map(conn, now, session_id, pair)
     owner_agent = dict(conn.execute("""SELECT request_id, owner_agent_id FROM request_owner
                                        WHERE owner_session_id = ?""", (session_id,)))
     costs, outputs, written, suspect = (defaultdict(list), defaultdict(list), defaultdict(int),
@@ -446,8 +450,10 @@ def agent_view(conn, session_id: str, agent_id: str, root=None, now: float | Non
     Turno = una petición del modelo (su texto y sus tool_use) con el tool_result de cada
     herramienta emparejado. Prompts y eventos de sistema van como elementos propios."""
     now = time.time() if now is None else now
-    signals = agent_signal_map(conn, now, session_id)
-    node = next((n for n in agent_tree(conn, session_id, now, root=root, signals=signals)
+    states = _agent_states(conn, now)
+    signals = agent_signal_map(conn, now, session_id, states)
+    node = next((n for n in agent_tree(conn, session_id, now, states=states, root=root,
+                                       signals=signals)
                  if n["id"] == agent_id), None)
     if node is None:
         return None

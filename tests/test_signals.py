@@ -121,3 +121,20 @@ def test_una_respuesta_con_varias_herramientas_en_vuelo():
     a = call("Read", "1", None, ago=20, req="r")
     b = call("Read", "2", None, ago=20, req="r")
     assert kinds([*a, *b]) == [("hung", True), ("hung", True)]
+
+
+def test_llamadas_en_paralelo_no_son_reintentos():
+    # Dos Bash en la MISMA respuesta: si uno falla, Claude Code cancela el otro y lo registra
+    # también como error. El modelo no reintentó nada (revisión de F6).
+    a = call("Bash", "1", "error", req="r1")
+    b = call("Bash", "2", "error", req="r1")
+    assert kinds([a[0], b[0], a[1], b[1]]) == [("error", True), ("error", True)]
+    # el siguiente uso, ya en otra respuesta, sí es un reintento
+    assert kinds([a[0], b[0], a[1], b[1], *call("Bash", "3", "error", req="r2")])[-1] == (
+        "retry_failed", True)
+
+
+def test_agente_terminado_no_tiene_herramientas_colgadas():
+    # §7.1: "terminado" manda; un tool_use sin resultado de un agente que ya terminó está
+    # abandonado, no colgado (revisión de F6)
+    assert kinds(call("Bash", result=None, ago=60), finished=True) == []

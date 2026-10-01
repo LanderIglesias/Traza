@@ -310,3 +310,8 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
   `index.html` viejo con el `app.js` nuevo: `renderCards` fallaba en un elemento inexistente y
   el panel se quedaba vacío y "Disconnected". Ahora `no-cache` (revalidación por ETag);
   verificado recargando **sin** forzar: llegó el JS nuevo.
+- **`/code-review` de F6, 2 hallazgos (falsas alarmas en rojo), corregidos con test y
+  mutación:** llamadas en paralelo de la misma respuesta contaban como reintento (sobre la misma
+  caché: reintentos fallidos 37 → 35, reintentos que funcionaron 202 → 197); un agente `done`
+  podía mostrar una herramienta "colgada" para siempre (0 casos hoy en disco; la regla de §7.1
+  ya decía que "terminado" manda y las señales no lo aplicaban).
