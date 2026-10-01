@@ -340,6 +340,17 @@ agrupa por fichero, ordena offsets y lee. Se verifica que el `uuid` de la línea
 si no (fichero reescrito) o si el fichero desapareció entre tick y clic → **"contenido no
 disponible"**, un único estado de error.
 
+Implementado en F5 (`views.read_content`, `GET /api/content?ids=1,2,3`):
+- `ids`: solo enteros separados por comas, **máximo 200**; cualquier otra cosa → 400.
+- Además del `uuid`, el bloque en el índice guardado debe ser del **tipo** guardado (un
+  `tool_result` no puede devolver el texto de otro bloque si la línea cambió).
+- La ruta leída debe estar **bajo la raíz** de `~/.claude/projects` (defensa en profundidad:
+  la caché es nuestra, pero un fichero que no es de Claude Code nunca se lee).
+- Recorte a **20.000 caracteres** por bloque (`truncated: true`): hay salidas de varios MB.
+- La respuesta es JSON con `nosniff`; el cliente lo pinta con `textContent` (§9). Verificado en
+  Chrome: un `tool_result` con `<script>alert(1)</script>` se ve como texto, 0 `alert`, 0
+  elementos `<script>`.
+
 ### 6.6 Coste
 
 - Calculado **al consultar** desde `requests` × `prices.toml`; no se almacena. Corregir un precio
@@ -463,7 +474,23 @@ Decisiones de F3 (revisión del brief, 30-09-2026):
   Columna ordenable **coste por token de salida**.
 - **Vista de juicio:** encargo arriba, timeline de herramientas en medio, resultado devuelto al
   padre abajo. Agrupada por turno, turnos cerrados plegados, últimos 50 turnos + "cargar
-  anteriores" (sin virtual scrolling en v1).
+  anteriores" (sin virtual scrolling en v1). Implementada en F5 (`views.agent_view`,
+  `GET /api/sessions/{s}/agents/{a}`):
+  - Se abre pulsando el nombre de un agente en el árbol; sustituye al árbol (nunca se apilan).
+  - **Turno** = una petición del modelo (sus bloques `text` y `tool_use`) con el `tool_result`
+    de cada herramienta **emparejado** por `tool_use_id`. Cada turno lleva modelo, coste,
+    tokens de salida y el aviso de plausibilidad (§8). Texto sin `requestId` (`<synthetic>`)
+    es su propio turno. Prompts y eventos de sistema (`api_error`, compactación, notificación,
+    resultado sin su llamada) van como elementos aparte, plegados.
+  - **Encargo** = primer prompt del subagente (fuera de la timeline). El principal no tiene.
+  - **Resultado devuelto**, solo si el agente está `done`: en primer plano, el `tool_result`
+    que recibió el padre (exactamente lo que vio); en segundo plano o skill fork, su último
+    texto ("Final answer"). Sin fin registrado → se dice, no se inventa.
+  - Plegado: abierto por defecto solo el último turno; lo que el usuario abre o cierra se
+    respeta en cada tick. El contenido se pide al desplegar y se guarda por id.
+  - "Cargar anteriores" pide `before=<start>` y desde entonces cada tick pide
+    `start_at=<lo más antiguo cargado>`: lo cargado no se pierde (la timeline solo crece por
+    el final). Si nada cambió, no se redibuja (conserva scroll y foco).
 ### 7.1 Estados de agente
 
 | Estado | Regla | Tipo |

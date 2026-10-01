@@ -258,3 +258,17 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
   del agente; sobre la copia congelada siguen 90 de 93 "done"); la notificación en bloques de
   texto se perdía; el foco del botón de plegar se perdía en cada re-render (verificado en Chrome
   tras 2 re-renders). De paso: `session_summary` calculaba los estados dos veces (667 → 350 ms).
+
+## F5 — Vista de juicio (01-10-2026)
+
+- **Datos reales:** la vista del agente principal de esta sesión (635 elementos) devuelve los
+  últimos 50 turnos en 0,40 s y 21 KB; "Load earlier" pasa a 100 turnos y un tick posterior
+  añade el turno nuevo sin perder los cargados (101). Un skill fork de `/code-review` muestra
+  su encargo completo, 7 turnos y su respuesta final. Móvil (390 px): sin desbordamiento.
+  En vivo, el turno en curso aparece con "No result yet" en sus herramientas.
+- **Plausibilidad de `output_tokens` (aviso, §8):** 385 de 8.811 peticiones en disco declaran
+  menos de 1 token por cada 40 caracteres escritos; se cuentan en la barra de salud y se
+  marcan con `?` en su agente y en su turno.
+- **Primer arranque tras subir versión:** durante el escaneo inicial (~2 s) `/api/overview`
+  responde con 0 sesiones y una vista de agente da 404. Es el comportamiento desde F3 (el
+  servidor no espera al primer escaneo); el siguiente tick lo corrige. Sin cambio.

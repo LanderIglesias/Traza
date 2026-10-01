@@ -85,7 +85,7 @@
             </div>
           </header>
           <p class="inherit" id="p-inherit" hidden></p>
-          <details class="details">
+          <details class="details" id="p-details">
             <summary>Session details</summary>
             <dl class="facts">
               <div><dt>Started</dt><dd id="p-started"></dd></div>
@@ -96,7 +96,7 @@
             <ul class="models" id="p-models" aria-label="Requests per model"></ul>
           </details>
           <h3 id="tree-h">Agents</h3>
-          <div class="tree-wrap">
+          <div class="tree-wrap" id="tree-wrap">
             <table class="tree" aria-labelledby="tree-h">
               <thead>
                 <tr>
@@ -112,6 +112,32 @@
               <tbody id="orphan-rows" class="orphans"></tbody>
             </table>
           </div>
+          <section class="judge" id="judge" hidden aria-labelledby="j-title">
+            <button type="button" class="back" id="j-back">← All agents</button>
+            <header class="j-head">
+              <div class="pt-main">
+                <h3 id="j-title"></h3>
+                <p class="sub" id="j-sub"></p>
+              </div>
+              <div class="pt-right">
+                <span class="pill" id="j-state"></span>
+                <span class="j-cost" id="j-cost" title="Own cost of this agent"></span>
+              </div>
+            </header>
+            <div class="j-block" id="j-task-block">
+              <h4>Task</h4>
+              <pre class="j-pre" id="j-task"></pre>
+            </div>
+            <div class="j-block">
+              <h4>Timeline <span class="j-count" id="j-count"></span></h4>
+              <button type="button" class="j-earlier" id="j-earlier" hidden>Load earlier turns</button>
+              <ol class="timeline" id="j-items"></ol>
+            </div>
+            <div class="j-block" id="j-result-block">
+              <h4 id="j-result-h">Returned to parent</h4>
+              <pre class="j-pre" id="j-result"></pre>
+            </div>
+          </section>
         </div>
       </section>
     </main>

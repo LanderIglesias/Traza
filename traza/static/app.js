@@ -30,6 +30,8 @@ function since(iso) {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
 }
 const shortId = (id) => id.slice(0, 8);
+// mcp__<servidor>__<herramienta>: en espacios cortos basta la herramienta (el nombre entero va en title)
+const toolLabel = (t) => (t?.startsWith("mcp__") ? t.split("__").at(-1) : t);
 const titleOf = (s) => s.title || `Untitled session · ${shortId(s.id)}`;
 
 // --- construcción de nodos sin HTML ------------------------------------------------------------
@@ -80,7 +82,7 @@ function renderCards(d) {
     $("live-status").textContent = "Live now";
     $("live-title").textContent = titleOf(s);
     $("live-detail").textContent = s.activity
-      ? `${s.activity.agent} · ${s.activity.tool} · ${since(s.activity.since)}`
+      ? `${s.activity.agent} · ${toolLabel(s.activity.tool)} · ${since(s.activity.since)}`
       : `${STATE_LABEL[s.state]} · ${s.project}`;
     more.hidden = live.length < 2;
     more.textContent = `+${live.length - 1} more`;
@@ -172,7 +174,11 @@ async function renderPanel() {
   $("p-agents").textContent = String(s.agents);
   $("p-models").replaceChildren(...Object.entries(s.models).map(([m, n]) =>
     el("li", {}, el("span", { text: m }), el("span", { className: "n", text: `${n.toLocaleString("en-US")} ${n === 1 ? "request" : "requests"}` }))));
-  renderTree(s);
+  const judging = ui.judge?.sid === s.id;
+  $("p-details").hidden = $("tree-h").hidden = $("tree-wrap").hidden = judging;
+  $("judge").hidden = !judging;
+  if (judging) renderJudge();
+  else renderTree(s);
 }
 
 // --- árbol de agentes (F4) -----------------------------------------------------------------------
@@ -205,9 +211,11 @@ function agentRow(s, n, depth, hasKids) {
   const cell = el("div", { className: "agent-cell" }, toggle,
     el("span", {},
       n.orphan ? el("span", { className: "mark", "data-kind": n.orphan, text: ORPHAN_MARK[n.orphan] }) : null,
-      el("span", { className: "agent-name", text: name }),
+      el("button", { type: "button", className: "agent-name agent-open", text: name,
+        "aria-label": `Open the timeline of ${name}` }),
       desc ? el("span", { className: "agent-desc", text: desc, title: desc }) : null));
   cell.style.setProperty("--depth", depth);
+  cell.querySelector(".agent-open").addEventListener("click", () => openJudge(s.id, n.id));
   const po = perOut(n);
   const out = n.output === null ? "?" : n.output.toLocaleString("en-US") + (n.implausible ? " ?" : "");
   const statePill = pill(n.state);
@@ -263,6 +271,7 @@ for (const th of document.querySelectorAll(".tree th[data-sort]")) {
 
 function select(id) {
   ui.selected = id;
+  ui.judge = null;
   renderRows(ui.data);
   renderPanel();
 }
@@ -348,3 +357,159 @@ setInterval(refreshSoon, 30000);
     setTimeout(start, 2000);
   }
 })();
+
+// --- vista de juicio (F5, design.md §7) -----------------------------------------------------------
+// El texto nunca viene con la timeline: se pide por ids a /api/content al desplegar (§6.5) y se
+// guarda aquí; dentro de una generación de caché, el contenido de un id no cambia.
+const contentCache = new Map();
+const SYSTEM_LABEL = { api_error: "API error", compact_boundary: "Context compacted",
+  task_notification: "Subagent finished (notification)", unknown: "Unrecognised line",
+  tool_result: "Tool result without its call" };
+const PROMPT_LABEL = { human: "Prompt", "task-notification": "Notification", meta: "Injected by Claude Code",
+  peer: "Message from an agent", interrupted: "Interrupted", "local-command": "Local command" };
+let judgeSeq = 0;
+
+function openJudge(sid, aid) {
+  ui.judge = { sid, aid, from: null, sig: "", open: new Map() };
+  renderPanel();
+  $("j-back").focus();
+}
+$("j-back").addEventListener("click", () => {
+  const aid = ui.judge?.aid;
+  ui.judge = null;
+  renderPanel().then(() => document.querySelector(`.tree tr[data-agent="${CSS.escape(aid)}"] .agent-open`)?.focus());
+});
+$("j-earlier").addEventListener("click", async () => {
+  const j = ui.judge;
+  const r = await fetch(`/api/sessions/${encodeURIComponent(j.sid)}/agents/${encodeURIComponent(j.aid)}?before=${j.data.start}`);
+  if (!r.ok || ui.judge !== j) return;
+  j.from = (await r.json()).start;        // desde ahí, cada refresco trae hasta el final
+  j.sig = "";
+  renderJudge();
+});
+
+async function renderJudge() {
+  const j = ui.judge, seq = ++judgeSeq;
+  const q = j.from !== null ? `?start_at=${j.from}` : "";
+  const r = await fetch(`/api/sessions/${encodeURIComponent(j.sid)}/agents/${encodeURIComponent(j.aid)}${q}`);
+  if (seq !== judgeSeq || ui.judge !== j) return;
+  if (r.status === 404) { ui.judge = null; return renderPanel(); }
+  if (!r.ok) return;
+  const v = await r.json();
+  if (seq !== judgeSeq || ui.judge !== j) return;
+  const sig = JSON.stringify(v);
+  if (sig === j.sig) return;              // nada cambió: no redibujar (conserva scroll y foco)
+  j.sig = sig;
+  j.data = v;
+  paintJudge(j, v);
+}
+
+const hhmmss = (ts) => (ts ? new Date(ts).toLocaleTimeString() : "");
+const agentName = (a) => (a.id === "main" ? "Main agent" : a.type || `Agent ${a.id.slice(0, 7)}`);
+
+function paintJudge(j, v) {
+  const a = v.agent;
+  $("j-title").textContent = agentName(a);
+  // el encargo ya se ve entero debajo: el subtítulo no lo repite
+  $("j-sub").textContent = a.description || (a.orphan ? ORPHAN_MARK[a.orphan] : "");
+  $("j-state").replaceWith(Object.assign(pill(a.state), { id: "j-state" }));
+  $("j-cost").textContent = money(a.cost, a.unpriced);
+
+  $("j-task-block").hidden = v.task === null;
+  if (v.task !== null) $("j-task").dataset.content = v.task;
+
+  const res = $("j-result");
+  $("j-result-block").hidden = a.id === "main";
+  delete res.dataset.content;
+  if (v.result) {
+    $("j-result-h").textContent = v.result.source === "parent_result" ? "Returned to parent" : "Final answer";
+    res.dataset.content = v.result.id;
+  } else {
+    $("j-result-h").textContent = "Returned to parent";
+    res.textContent = a.state === "idle"
+      ? "Nothing returned: no end is recorded on disk for this agent."
+      : "Nothing yet: the agent is still working.";
+  }
+
+  const turns = v.items.filter((i) => i.kind === "turn").length;
+  $("j-count").textContent = v.start > 0
+    ? `· ${turns} turns shown, earlier ones hidden` : `· ${turns} turns`;
+  $("j-earlier").hidden = v.start === 0;
+
+  const lastTurn = v.items.findLastIndex((i) => i.kind === "turn");
+  const focusedKey = document.activeElement?.closest?.("#j-items details")?.dataset.key;
+  $("j-items").replaceChildren(...v.items.map((it, i) => itemNode(j, it, i === lastTurn)));
+  if (focusedKey) $("j-items").querySelector(`details[data-key="${CSS.escape(focusedKey)}"] > summary`)?.focus();
+  fillContent($("judge"));
+}
+
+function details(j, key, openByDefault, summary, body) {
+  const d = el("details", { "data-key": key }, el("summary", {}, ...summary), body);
+  d.open = j.open.get(key) ?? openByDefault;   // lo que el usuario abrió o cerró se respeta
+  d.addEventListener("toggle", () => {
+    j.open.set(key, d.open);
+    if (d.open) fillContent(d);
+  });
+  return d;
+}
+
+function pre(id) {
+  return el("pre", { className: "j-pre", "data-content": id });
+}
+
+function itemNode(j, it, isLast) {
+  if (it.kind !== "turn") {
+    const e = it.event;
+    const label = it.kind === "prompt" ? PROMPT_LABEL[e.origin] || "Prompt" : SYSTEM_LABEL[e.kind] || e.kind;
+    return el("li", { className: `t-item t-${it.kind}` },
+      details(j, `e${e.id}`, false,
+        [el("span", { className: "t-kind", text: label }), el("time", { text: hhmmss(e.ts) })],
+        pre(e.id)));
+  }
+  const tools = new Map();
+  let errors = 0, blocked = 0;
+  for (const e of it.events) {
+    if (e.kind === "tool_use") tools.set(e.tool_name, (tools.get(e.tool_name) || 0) + 1);
+    if (e.result?.is_error) e.result.denial ? blocked++ : errors++;
+  }
+  const toolText = [...tools].map(([t, n]) => (n > 1 ? `${toolLabel(t)} ×${n}` : toolLabel(t))).join(" · ");
+  const toolTitle = [...tools.keys()].join(" · ");
+  const out = it.output === null ? "? out" : `${it.output.toLocaleString("en-US")} out${it.implausible ? " ?" : ""}`;
+  const summary = [
+    el("span", { className: "t-kind", text: toolText ? "Turn" : "Reply" }),
+    el("time", { text: hhmmss(it.ts) }),
+    toolText ? el("span", { className: "t-tools", text: toolText, title: toolTitle }) : null,
+    errors ? el("span", { className: "badge", title: `${errors} tool results that failed` }, icon(ALERT), el("span", { text: String(errors) })) : null,
+    blocked ? el("span", { className: "badge badge-muted", text: `${blocked} blocked` }) : null,
+    el("span", { className: "t-cost", text: `${money(it.cost)} · ${out}`,
+      title: it.implausible ? "Claude Code wrote an output token count far below what this turn wrote: the real output, and cost, are higher" : "Estimated cost and output tokens of this turn" }),
+  ];
+  const body = el("div", { className: "t-body" }, ...it.events.map((e) => {
+    if (e.kind === "text") return el("div", { className: "t-text" }, pre(e.id));
+    const r = e.result;
+    const resLabel = !r ? "No result yet" : r.denial ? `Blocked before running (${r.denial})` : r.is_error ? "Error" : "Result";
+    return el("div", { className: "t-tool" },
+      pre(e.id),
+      el("div", { className: "t-res", "data-state": !r ? "pending" : r.denial ? "blocked" : r.is_error ? "error" : "ok" },
+        el("span", { className: "t-res-h", text: resLabel }),
+        r ? pre(r.id) : null));
+  }));
+  return el("li", { className: "t-turn" }, details(j, it.request_id || `e${it.events[0].id}`, isLast, summary, body));
+}
+
+// Rellena los <pre data-content> visibles (fuera de <details> cerrados) con su texto.
+async function fillContent(scope) {
+  const targets = [...scope.querySelectorAll("[data-content]")].filter((n) => !n.closest("details:not([open])"));
+  const missing = [...new Set(targets.map((n) => Number(n.dataset.content)).filter((id) => !contentCache.has(id)))];
+  for (let i = 0; i < missing.length; i += 200) {
+    const r = await fetch(`/api/content?ids=${missing.slice(i, i + 200).join(",")}`);
+    if (!r.ok) return;
+    for (const [id, c] of Object.entries(await r.json())) contentCache.set(Number(id), c);
+  }
+  for (const n of targets) {
+    const c = contentCache.get(Number(n.dataset.content));
+    if (!c) continue;
+    n.textContent = c.ok ? c.text : "Content unavailable";   // textContent: nunca HTML (§9)
+    n.dataset.state = c.ok ? (c.truncated ? "truncated" : "ok") : "unavailable";
+  }
+}

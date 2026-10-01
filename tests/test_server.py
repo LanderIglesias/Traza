@@ -193,3 +193,27 @@ def test_cada_peticion_http_lee_una_foto_coherente(tmp_path):
             writer.execute("INSERT INTO sessions VALUES ('nueva', 'p', NULL)")
         assert conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == before
     writer.close()
+
+
+# --- F5: vista de juicio y contenido bajo demanda ------------------------------------------------
+
+def test_vista_de_agente_por_http(client):
+    r = client.get("/api/sessions/sess-A/agents/abc")
+    assert r.status_code == 200 and r.json()["agent"]["type"] == "Explore"
+    assert client.get("/api/sessions/sess-A/agents/no-existe").status_code == 404
+    assert client.get("/api/sessions/sess-A/agents/main?before=2").json()["items"] is not None
+
+
+def test_contenido_es_json_con_el_texto_literal(client):
+    ids = [str(e["id"]) for i in client.get("/api/sessions/sess-A/agents/main").json()["items"]
+           if i["kind"] == "prompt" for e in [i["event"]]]
+    r = client.get(f"/api/content?ids={','.join(ids)}")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("application/json")
+    assert r.headers["x-content-type-options"] == "nosniff"   # nunca se interpreta como HTML
+    assert r.json()[ids[0]]["text"] == "Hola, lista los ficheros"
+
+
+@pytest.mark.parametrize("ids", ["", "abc", "1,,2", "1;DROP", "-1", ",".join(["1"] * 201)],
+                         ids=["vacio", "texto", "hueco", "inyeccion", "negativo", "201-ids"])
+def test_ids_de_contenido_se_validan(client, ids):
+    assert client.get(f"/api/content?ids={ids}").status_code == 400

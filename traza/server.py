@@ -6,6 +6,7 @@ cada uno con su conexión de solo lectura (WAL: los lectores no esperan al escri
 """
 import asyncio
 import json
+import re
 import sqlite3
 from contextlib import asynccontextmanager, closing, contextmanager
 from pathlib import Path
@@ -160,10 +161,31 @@ def create_app(db_path, root, port: int, interval: float = 0.5,
     @app.get("/api/sessions/{session_id}")
     def session(session_id: str):
         with reader(db_path) as conn:
-            s = views.session_summary(conn, session_id)
+            s = views.session_summary(conn, session_id, root=root)
         if s is None:
             raise HTTPException(404)
         return s
+
+    @app.get("/api/sessions/{session_id}/agents/{agent_id}")
+    def agent(session_id: str, agent_id: str, before: int | None = None,
+              start_at: int | None = None):
+        with reader(db_path) as conn:
+            v = views.agent_view(conn, session_id, agent_id, root=root, before=before,
+                                 start_at=start_at)
+        if v is None:
+            raise HTTPException(404)
+        return v
+
+    @app.get("/api/content")
+    def content(ids: str = ""):
+        # frontera: solo enteros separados por comas, como mucho CONTENT_MAX_IDS (§6.5)
+        if not re.fullmatch(r"\d{1,18}(,\d{1,18})*", ids):
+            raise HTTPException(400, "ids: comma-separated integers")
+        wanted = list(dict.fromkeys(int(i) for i in ids.split(",")))
+        if len(ids.split(",")) > views.CONTENT_MAX_IDS:
+            raise HTTPException(400, f"at most {views.CONTENT_MAX_IDS} ids")
+        with reader(db_path) as conn:
+            return {str(k): v for k, v in views.read_content(conn, wanted, root).items()}
 
     @app.get("/events")
     async def events(request: Request, gen: str | None = None):

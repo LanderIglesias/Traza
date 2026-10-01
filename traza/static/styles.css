@@ -203,7 +203,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .facts div { background: #f5f6f9; border-radius: var(--radius-s); padding: 12px 14px; }
 .facts dt { font-size: 12px; color: var(--ink-2); font-weight: 600; }
 .facts dd { font-weight: 800; margin-top: 2px; }
-.panel-body h3 { font-size: 13px; font-weight: 800; color: var(--ink-2); margin-bottom: -12px; }
+.panel-body > h3 { font-size: 13px; font-weight: 800; color: var(--ink-2); margin-bottom: -12px; }
 .models { margin-top: 8px; }
 .models li { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .models li:last-child { border-bottom: 0; }
@@ -242,6 +242,62 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .mark[data-kind="sin_tool_use_id"] { background: var(--think-bg); color: var(--think); }
 .mark[data-kind="padre_no_encontrado"] { background: var(--err-bg); color: var(--err); }
 .pill[data-state="done"] { background: #e6f4ec; color: #1b7a45; }
+
+.agent-open {
+  font: inherit; font-weight: 800; color: var(--ink); background: none; border: 0; padding: 0;
+  cursor: pointer; text-align: left; border-radius: 4px;
+}
+.agent-open:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* --- vista de juicio (F5) ------------------------------------------------------------------- */
+.judge { display: flex; flex-direction: column; gap: 20px; }
+.back {
+  width: fit-content; font: inherit; font-size: 13px; font-weight: 700; color: var(--ink-2);
+  background: var(--idle-bg); border: 0; border-radius: 999px; padding: 6px 12px; cursor: pointer;
+}
+.back:hover { color: var(--ink); }
+.j-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.j-head h3 { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -0.02em; }
+.j-cost { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+.j-block { display: flex; flex-direction: column; gap: 8px; }
+.j-block h4 { margin: 0; font-size: 13px; font-weight: 800; color: var(--ink-2); }
+.j-count { font-weight: 600; }
+.j-pre {
+  margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto;
+  background: #f5f6f9; border-radius: 10px; padding: 10px 12px; color: var(--ink);
+  font: 12.5px/1.5 ui-monospace, "Cascadia Code", Consolas, "SF Mono", monospace;
+}
+.j-pre:empty::before { content: "Loading…"; color: var(--ink-3); }
+.j-pre[data-state="unavailable"] { color: var(--ink-3); font-style: italic; }
+.j-pre[data-state="truncated"]::after { content: "\A— truncated to 20,000 characters"; color: var(--ink-3); }
+.j-earlier {
+  width: fit-content; font: inherit; font-size: 12.5px; font-weight: 700; color: var(--tool);
+  background: var(--tool-bg); border: 0; border-radius: 999px; padding: 5px 12px; cursor: pointer;
+}
+.timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.timeline details { border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--card); }
+.timeline summary {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 9px 12px;
+  cursor: pointer; font-size: 13px; list-style: none;
+}
+.timeline summary::-webkit-details-marker { display: none; }
+.timeline summary::before {
+  content: ""; width: 7px; height: 7px; flex: none; border-right: 2px solid var(--ink-2);
+  border-bottom: 2px solid var(--ink-2); transform: rotate(-45deg); transition: transform 160ms var(--ease);
+}
+.timeline details[open] > summary::before { transform: rotate(45deg); }
+.t-kind { font-weight: 800; }
+.timeline time { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.t-tools { color: var(--ink); font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.t-cost { margin-left: auto; color: var(--ink-2); font-variant-numeric: tabular-nums; font-weight: 600; }
+.t-prompt .t-kind, .t-system .t-kind { color: var(--ink-2); }
+.timeline details > .j-pre { margin: 0 12px 12px; }
+.t-body { display: flex; flex-direction: column; gap: 12px; padding: 0 12px 12px; }
+.t-tool { display: flex; flex-direction: column; gap: 6px; }
+.t-res { display: flex; flex-direction: column; gap: 4px; }
+.t-res-h { width: fit-content; font-size: 11.5px; font-weight: 800; padding: 1px 8px; border-radius: 999px; background: #e6f4ec; color: #1b7a45; }
+.t-res[data-state="error"] .t-res-h { background: var(--err-bg); color: var(--err); }
+.t-res[data-state="blocked"] .t-res-h, .t-res[data-state="pending"] .t-res-h { background: var(--idle-bg); color: var(--idle); }
 
 /* móvil: cada agente es una tarjeta (el coste no puede quedar escondido tras un scroll lateral).
    Sin cabecera no hay orden por columna en móvil. */

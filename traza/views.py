@@ -3,6 +3,7 @@ import json
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
+from pathlib import Path
 
 from . import db
 from .parser import prompt_text
@@ -226,7 +227,8 @@ def overview(conn, now: float | None = None, states=None) -> dict:
     }
 
 
-def session_summary(conn, session_id: str, now: float | None = None) -> dict | None:
+def session_summary(conn, session_id: str, now: float | None = None,
+                    root=None) -> dict | None:
     """Resumen para el panel de trabajo (§7, clic en una sesión en F3)."""
     now = time.time() if now is None else now
     states = _agent_states(conn, now)   # una vez para la fila y el árbol
@@ -241,29 +243,28 @@ def session_summary(conn, session_id: str, now: float | None = None) -> dict | N
         "SELECT first_ts FROM files WHERE session_id = ? AND agent_id = 'main'",
         (session_id,)).fetchone()
     s["started"] = s["started"][0] if s["started"] else None
-    s["tree"] = agent_tree(conn, session_id, now, states)
+    s["tree"] = agent_tree(conn, session_id, now, states, root)
     return s
 
 
-def _task(conn, session_id: str, agent_id: str) -> str | None:
-    """Principio del primer prompt del agente, leído del JSONL (la caché no guarda texto, §6.2).
-    Para los skill forks, que no traen `description`."""
-    row = conn.execute("""SELECT file_path, byte_offset, length FROM events
-                          WHERE session_id = ? AND agent_id = ? AND kind = 'prompt'
-                          ORDER BY id LIMIT 1""", (session_id, agent_id)).fetchone()
-    if row is None:
-        return None
-    try:
-        with open(row[0], "rb") as f:
-            f.seek(row[1])
-            d = json.loads(f.read(row[2]))
-        text = prompt_text(d["message"]["content"])
-    except (OSError, ValueError, KeyError, TypeError):  # fichero cambiado o línea rara: sin texto
-        return None
-    return " ".join(text.split())[:TASK_CHARS] or None
+def _first_prompt(conn, session_id: str, agent_id: str) -> int | None:
+    row = conn.execute("""SELECT id FROM events WHERE session_id = ? AND agent_id = ?
+                          AND kind = 'prompt' ORDER BY id LIMIT 1""",
+                       (session_id, agent_id)).fetchone()
+    return row[0] if row else None
 
 
-def agent_tree(conn, session_id: str, now: float | None = None, states=None) -> list[dict]:
+def _task(conn, session_id: str, agent_id: str, root) -> str | None:
+    """Principio del primer prompt del agente (para los skill forks, que no traen description)."""
+    eid = _first_prompt(conn, session_id, agent_id)
+    got = read_content(conn, [eid], root).get(eid) if eid is not None else None
+    if not got or not got["ok"]:
+        return None
+    return " ".join(got["text"].split())[:TASK_CHARS] or None
+
+
+def agent_tree(conn, session_id: str, now: float | None = None, states=None,
+               root=None) -> list[dict]:
     """Nodos del árbol de agentes de una sesión (§7, F4); el frontend los anida por `parent`.
     Coste propio = peticiones de las que este agente es dueño (§6.2: lo heredado de otra sesión
     no cuenta); acumulado = propio + el de todo su subárbol."""
@@ -315,7 +316,8 @@ def agent_tree(conn, session_id: str, now: float | None = None, states=None) -> 
             "id": aid, "type": agent_type, "description": description,
             "parent": parents.get(aid), "orphan": orphans.get(aid),
             # el principio del encargo solo para skill forks: "padre desconocido" no lo lleva
-            "task": _task(conn, session_id, aid) if orphans.get(aid) == "sin_tool_use_id" else None,
+            "task": (_task(conn, session_id, aid, root)
+                     if orphans.get(aid) == "sin_tool_use_id" else None),
             "state": states.get((session_id, aid), "idle"),
             "requests": len(costs[aid]),
             "output": None if None in outs else sum(outs),
@@ -325,3 +327,160 @@ def agent_tree(conn, session_id: str, now: float | None = None, states=None) -> 
             "errors": errors, "blocked": blocked, "started": started,
         })
     return nodes
+
+
+# --- F5: contenido bajo demanda (§6.5) y vista de juicio (§7) ------------------------------------
+
+CONTENT_MAX_CHARS = 20_000   # por bloque: hay salidas de herramienta de varios MB
+CONTENT_MAX_IDS = 200        # por petición
+TIMELINE_TURNS = 50          # §7: últimos 50 turnos + "cargar anteriores"
+
+
+def _block_text(b) -> str:
+    """Contenido de un tool_result: texto, o bloques de texto; lo demás (imágenes) se nombra."""
+    c = b.get("content")
+    if isinstance(c, str):
+        return c
+    if isinstance(c, list):
+        return "\n".join(x.get("text", "") if x.get("type") == "text" else f"[{x.get('type')}]"
+                         for x in c if isinstance(x, dict))
+    return ""
+
+
+def _extract(d: dict, kind: str, block: int) -> str | None:
+    """El texto del evento en su línea, o None si la línea ya no es la que se indexó."""
+    try:
+        if kind == "prompt":
+            return prompt_text(d["message"]["content"])
+        if kind == "task_notification":
+            return d["attachment"]["prompt"]
+        if kind == "api_error":
+            return str(d.get("error") or "API error")
+        if kind == "compact_boundary":
+            return str(d.get("content") or "Conversation compacted")
+        b = d["message"]["content"][block]
+        if b.get("type") != kind:          # el bloque de ese índice no es el que se guardó
+            return None
+        if kind == "text":
+            return b["text"]
+        if kind == "tool_use":
+            return f"{b.get('name')}\n{json.dumps(b.get('input'), indent=2, ensure_ascii=False)}"
+        if kind == "tool_result":
+            return _block_text(b)
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return None
+    return None
+
+
+def read_content(conn, ids, root=None) -> dict[int, dict]:
+    """{id: {"ok", "text", "truncated"}} leyendo (fichero, offset, longitud) del JSONL (§6.5).
+    Un único estado de error, {"ok": False}: id desconocido, fichero desaparecido, línea cuyo
+    uuid o bloque ya no coincide, o ruta fuera de `root` (defensa en profundidad: el servidor
+    siempre pasa la raíz de ~/.claude/projects; sin root solo lo usan los tests)."""
+    out = {i: {"ok": False} for i in ids}
+    if not ids:
+        return out
+    rows = conn.execute(f"""SELECT id, file_path, byte_offset, length, block, kind, uuid
+                            FROM events WHERE id IN ({','.join('?' * len(ids))})""", list(ids))
+    by_file = defaultdict(list)
+    for r in rows:
+        by_file[r[1]].append(r)
+    root = Path(root).resolve() if root is not None else None
+    for fp, rs in by_file.items():
+        try:
+            if root is not None and not Path(fp).resolve().is_relative_to(root):
+                continue
+            with open(fp, "rb") as f:
+                for eid, _, offset, length, block, kind, uid in sorted(rs, key=lambda r: r[2]):
+                    f.seek(offset)
+                    try:
+                        d = json.loads(f.read(length))
+                    except ValueError:
+                        continue
+                    if uid is None or not isinstance(d, dict) or d.get("uuid") != uid:
+                        continue
+                    text = _extract(d, kind, block)
+                    if isinstance(text, str):
+                        out[eid] = {"ok": True, "text": text[:CONTENT_MAX_CHARS],
+                                    "truncated": len(text) > CONTENT_MAX_CHARS}
+        except OSError:
+            continue
+    return out
+
+
+def agent_view(conn, session_id: str, agent_id: str, root=None, now: float | None = None,
+               limit: int = TIMELINE_TURNS, before: int | None = None,
+               start_at: int | None = None) -> dict | None:
+    """Vista de juicio (§7): encargo, timeline por turnos y resultado devuelto al padre. Solo
+    metadatos: el texto se pide aparte con read_content (§6.5).
+
+    Turno = una petición del modelo (su texto y sus tool_use) con el tool_result de cada
+    herramienta emparejado. Prompts y eventos de sistema van como elementos propios."""
+    node = next((n for n in agent_tree(conn, session_id, now, root=root)
+                 if n["id"] == agent_id), None)
+    if node is None:
+        return None
+    task = _first_prompt(conn, session_id, agent_id) if agent_id != "main" else None
+    rows = conn.execute("""SELECT id, kind, request_id, tool_name, tool_use_id, is_error, denial,
+                                  timestamp, origin FROM events
+                           WHERE session_id = ? AND agent_id = ? ORDER BY id""",
+                        (session_id, agent_id)).fetchall()
+    rids = {r[2] for r in rows if r[2]}
+    reqs = {r.request_id: r for r in db.requests(conn) if r.request_id in rids}
+    suspect = db.implausible_output(conn) & rids
+
+    items, turns, uses = [], {}, {}
+    for eid, kind, rid, tool, tuid, is_error, denial, ts, origin in rows:
+        if eid == task:
+            continue
+        ev = {"id": eid, "kind": kind, "tool_name": tool, "ts": ts}
+        if kind in ("text", "tool_use"):
+            key = rid or f"e{eid}"          # texto sin requestId (p. ej. <synthetic>): su turno
+            if key not in turns:
+                r = reqs.get(rid)
+                turns[key] = {"kind": "turn", "request_id": rid, "ts": ts, "events": [],
+                              "model": r.model if r else None,
+                              "output": r.tokens.output if r else None,
+                              "cost": request_cost(r) if r else None,
+                              "implausible": rid in suspect}
+                items.append(turns[key])
+            turns[key]["events"].append(ev)
+            if kind == "tool_use" and tuid:
+                uses[tuid] = ev
+        elif kind == "tool_result":
+            res = {"id": eid, "is_error": bool(is_error), "denial": denial, "ts": ts}
+            use = uses.get(tuid)
+            if use is not None and "result" not in use:
+                use["result"] = res
+            else:                            # su tool_use no está en este agente
+                items.append({"kind": "system", "event": {**ev, **res}})
+        elif kind == "prompt":
+            items.append({"kind": "prompt", "event": {**ev, "origin": origin}})
+        else:                                # api_error, compact_boundary, notificación, unknown
+            items.append({"kind": "system", "event": ev})
+
+    # los últimos `limit` turnos antes de `before`, con lo que haya entre ellos
+    end = len(items) if before is None else max(0, min(before, len(items)))
+    turn_at = [i for i, it in enumerate(items[:end]) if it["kind"] == "turn"]
+    start = turn_at[-limit] if len(turn_at) > limit else 0
+    if start_at is not None:                 # desde ahí hasta el final (refresco tras cargar más)
+        start, end = max(0, min(start_at, len(items))), len(items)
+
+    result = None
+    if agent_id != "main" and node["state"] == "done":
+        # primer plano: lo que recibió el padre; segundo plano o skill fork: su último texto
+        parent = conn.execute("""SELECT e.id, e.agent_status FROM events e JOIN agents a
+                                   ON a.session_id = e.session_id
+                                  AND a.parent_tool_use_id = e.tool_use_id
+                                 WHERE a.session_id = ? AND a.agent_id = ?
+                                   AND e.kind = 'tool_result' ORDER BY e.id LIMIT 1""",
+                              (session_id, agent_id)).fetchone()
+        if parent and parent[1] != "async_launched":
+            result = {"id": parent[0], "source": "parent_result"}
+        else:
+            last = conn.execute("""SELECT MAX(id) FROM events WHERE session_id = ?
+                                   AND agent_id = ? AND kind = 'text'""",
+                                (session_id, agent_id)).fetchone()[0]
+            result = {"id": last, "source": "final_text"} if last else None
+    return {"agent": node, "task": task, "result": result,
+            "items": items[start:end], "start": start, "total": len(items)}

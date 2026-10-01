@@ -107,7 +107,7 @@ heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `
   skill" con el principio de su encargo; `padre_no_encontrado` como "padre desconocido".
 - Columna "coste por token de salida" ordenable. (En móvil las filas son tarjetas sin cabecera: sin orden por columna.)
 
-## F5 — Vista de juicio y contenido bajo demanda (~1 día)
+## F5 — Vista de juicio y contenido bajo demanda (~1 día)  ✅ tests verdes y verificado en Chrome, pendiente de revisión
 
 `GET /content?ids=…` con verificación de `uuid`.
 
