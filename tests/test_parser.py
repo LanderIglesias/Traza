@@ -222,3 +222,13 @@ def test_cost_state_se_lee_para_el_coste_interno():
     # forma rara: no se inventa una medida
     raro = parse_line(line(type="cost-state", startTime="x", modelUsage=[]))
     assert raro.cost_state is None and raro.ignored == "cost-state"
+
+
+def test_cost_state_con_otro_formato_se_ve_como_unknown():
+    # Si Claude Code renombrara costUSD, el coste interno no puede desaparecer en silencio:
+    # la línea cuenta como unknown y la barra de salud se pone en rojo (revisión de 4b2ab68).
+    p = parse_line(line(type="cost-state", startTime=1, modelUsage={
+        "claude-haiku-4-5-20251001": {"costUsd": 0.02}}))
+    assert [e.kind for e in p.events] == ["unknown"] and p.cost_state is None
+    # sin modelos (un proceso que aún no ha gastado) es legítimo: medida vacía
+    assert parse_line(line(type="cost-state", startTime=1, modelUsage={})).cost_state == (1, {})

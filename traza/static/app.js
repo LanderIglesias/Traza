@@ -113,14 +113,15 @@ function renderCards(d) {
     (h.implausible ? `${h.implausible.toLocaleString("en-US")} requests with implausibly low output tokens · ` : "") +
     `costs are estimates from public prices` +
     // coste interno (llamadas de Claude Code que no se escriben): solo si hay algo medido
-    (h.internal_cost ? ` · internal cost measured: ${money(h.internal_cost.cost)} in ${plural(h.internal_cost.sessions, "session")}` : "");
+    (h.internal_cost ? ` · internal cost measured: at least ${money(h.internal_cost.cost)} in ${plural(h.internal_cost.sessions, "session")}` : "");
   $("health-internal").hidden = !h.internal_cost;
   if (h.internal_cost) {
     const ic = h.internal_cost;
     $("health-internal-text").textContent =
       `Claude Code also calls models for its own work (session titles, summaries) and does not write those calls to the session files. ` +
-      `Its own cost records measure them in ${plural(ic.sessions, "session")}: ${money(ic.cost)}, ` +
-      `${(ic.share * 100).toFixed(2)} % of the ${money(ic.measured)} those records cover. Sessions without a cost record cannot be measured.`;
+      `Its own cost records measure them in ${plural(ic.sessions, "session")}: at least ${money(ic.cost)}, ` +
+      `${(ic.share * 100).toFixed(2)} % of the ${money(ic.measured)} those records cover. It is a floor: internal calls to a model ` +
+      `the session also uses cannot be told apart. Sessions without a cost record cannot be measured.`;
   }
   $("health-ignored").replaceChildren(...Object.entries(h.ignored_by_type).map(([t, n]) =>
     el("li", {}, el("span", { text: t }), el("span", { text: n.toLocaleString("en-US") }))));

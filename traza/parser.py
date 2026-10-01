@@ -156,10 +156,12 @@ def _parse(d) -> Parsed:
         mu, start = d.get("modelUsage"), _int(d.get("startTime"))
         if not isinstance(mu, dict) or start is None:
             return Parsed(ignored="cost-state")       # forma rara: no se inventa una medida
-        return Parsed(cost_state=(start, {
-            m: float(v["costUSD"]) for m, v in mu.items()
-            if isinstance(m, str) and isinstance(v, dict)
-            and type(v.get("costUSD")) in (int, float)}))
+        costs = {m: float(v["costUSD"]) for m, v in mu.items()
+                 if isinstance(m, str) and isinstance(v, dict)
+                 and type(v.get("costUSD")) in (int, float)}
+        if mu and not costs:   # trae modelos pero ninguno con costUSD: el formato cambió
+            return Parsed(events=[Event("unknown", 0, uuid, ts)])
+        return Parsed(cost_state=(start, costs))
     a = d.get("attachment")
     if (t == "attachment" and isinstance(a, dict) and a.get("type") == "queued_command"
             and a.get("commandMode") == "task-notification"):

@@ -6,7 +6,7 @@ from pathlib import Path
 from .parser import Request, Tokens
 
 # Subir cualquiera de los dos borra y reconstruye la BD: no hay migraciones (§6.4).
-PARSER_VERSION = "13"
+PARSER_VERSION = "14"
 SCHEMA_VERSION = "7"
 
 SCHEMA = """
@@ -214,8 +214,10 @@ def implausible_output(conn) -> set[str]:
 def internal_cost(conn) -> dict | None:
     """Coste interno medido (design.md §4.1): en cada cost-state (el último de cada proceso,
     porque es acumulado), el costUSD de los modelos que esa sesión nunca usa en una petición:
-    son llamadas internas de Claude Code que no se escriben (títulos, resúmenes). None si no hay
-    nada medido: la barra de salud calla en vez de mostrar una nota que no dice cuánto."""
+    son llamadas internas de Claude Code que no se escriben (títulos, resúmenes). Es un MÍNIMO:
+    las llamadas internas a un modelo que la sesión también usa no se pueden separar (restar por
+    modelo en la ventana del cost-state no cuadra en sesiones copia y no se sabe si incluye a
+    los subagentes, findings §4). None si no hay nada medido: la barra calla."""
     used = set(conn.execute("""SELECT DISTINCT r.session_id, q.model FROM request_refs r
                                JOIN requests q USING (request_id)"""))
     internal, measured, sessions = 0.0, 0.0, set()

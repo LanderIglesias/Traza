@@ -73,7 +73,11 @@ argumentos, resultados), que es lo que hace falta para juzgar calidad.
   las líneas `cost-state` se guardan (`cost_states`); coste interno = `costUSD` de los modelos
   que un `cost-state` registra y que esa sesión **nunca** usa en una petición (del último
   `cost-state` de cada proceso: es acumulado). La barra de salud lo muestra **solo si hay algo
-  medido**, con la cifra ("internal cost measured: $0.02 in 2 sessions"); si no, calla. En disco:
+  medido**, con la cifra ("internal cost measured: at least $0.02 in 2 sessions"); si no, calla.
+  Es un **mínimo**: las llamadas internas a un modelo que la sesión también usa no se pueden
+  separar (restar por modelo en la ventana del `cost-state` no cuadra en copias y no se sabe si
+  incluye a los subagentes). Un `cost-state` con modelos pero sin `costUSD` numérico cuenta
+  como `unknown`: un cambio de formato no puede apagar la cifra en silencio. En disco:
   $0,019 en 2 sesiones (0,88 % y 0,66 % del gasto de cada una; 0,03 % de todo lo que cubren los
   `cost-state`). Las sesiones sin `cost-state` no se pueden medir, y así se dice.
 
@@ -270,8 +274,10 @@ no se guarda (ver "Sesión dueña").
   - *conocidos e ignorados (contados):* `attachment` (casi todo salida de hooks),
     `queue-operation`, `last-prompt`, `mode`, `file-history-snapshot`, `file-history-delta`,
     `bridge-session`, `atis-latch`, `frame-link`, `artifact-comment-monitor`,
-    `artifact-autoreact-ledger`, `cost-state`, resto de subtipos de `system`.
-    `cost-state` **no se guarda en la BD**: el test oráculo lo lee directamente del JSONL.
+    `artifact-autoreact-ledger`, resto de subtipos de `system`.
+  - *leído, no mostrado como evento:* `cost-state` (desde F6). Se guarda en `cost_states` para
+    el coste interno (§4.1); el test oráculo lo sigue leyendo directamente del JSONL. Si trae
+    modelos pero ninguno con `costUSD` numérico (formato cambiado), la línea es `unknown`.
   - *unknown:* todo lo demás, contado y visible.
   - Proporción ignorada hoy: **63 % de las líneas, 41 % de los bytes**. v1 muestra el trabajo del
     modelo, no toda la maquinaria de Claude Code; el README lo dice así.

@@ -342,3 +342,15 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
   plegaban), y en las filas de sesión con badges el título quedaba en una letra o desaparecía
   (este venía de F4, al añadir el chip de bloqueos). Ahora la cabecera y la fila hacen salto de
   línea; verificado también que en escritorio no cambia nada.
+- **`/code-review` de 4b2ab68: sin fallos en "colgada"/"sin terminar"; 3 hallazgos del coste
+  interno, corregidos:** un `cost-state` con el campo renombrado se habría leído como medida
+  vacía y la cifra habría desaparecido sin aviso (ahora es `unknown`, test); la cifra es un
+  mínimo y la interfaz ya lo dice ("at least"); design.md §6 aún decía que `cost-state` se
+  ignora. Comprobación independiente del revisor sobre la caché real: $0,0188 en 2 sesiones,
+  0,034 % de $54,97, la sesión copia no cuenta.
+- **Estado "pensando" del principal — aclaración (pregunta del revisor):** la regla no es
+  "última línea de texto → idle" sino "última línea de texto **del modelo** → idle". Tras un
+  prompt tuyo el principal está `thinking` (test `("prompt", False, "thinking")`), también tras
+  cada `tool_result`; pasa a `idle` con su texto final, con un prompt que no se contesta
+  (interrupción, comando local) o con 10 min sin escribir. Visto en vivo en esta sesión: la
+  tarjeta "Live now" decía "Thinking" mientras generaba. No hace falta un estado "enviado".
