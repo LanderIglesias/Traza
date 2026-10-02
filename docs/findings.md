@@ -539,3 +539,25 @@ Sin sandbox en este Windows: revisión de código + experimentos solo con la std
   frecuente): "0 unknown · 112 ignored (4 types)". Regrabado: 13,8 s, 3,9 MB.
 - **Playwright no es dependencia de traza:** extra opcional `demo` en pyproject; `pipx install`
   no lo descarga. ffmpeg, aparte (no es de pip).
+
+## F7 — cifras para el README (02-10-2026)
+
+Regeneradas con el código actual (PARSER 15), reconstruyendo la caché en frío en una BD temporal:
+- **Disco:** 65 sesiones, 196 ficheros (131 subagentes), 111.586 líneas, 9.655 peticiones.
+  Reconstrucción en frío: 3,24 s el escaneo (3,5 s en total).
+- **Valor a precios de la API de todo el disco:** $1.158,48 (crece en vivo; la cifra de F4,
+  $983,43, ya no es la actual). Hoy: $84,23.
+- **Salud:** 0 líneas desconocidas; 70.033 ignoradas adrede (13 tipos; `attachment` 50.762);
+  466 peticiones con `output_tokens` implausiblemente bajos (aviso, no corrección); coste interno
+  medido **al menos** $0,09 en 3 sesiones (0,12 % de lo que registran los `cost-state`).
+- **Oráculo** (`pytest -s tests/test_oracle.py`): cuadran **exacto, tokens y dólares**, las dos
+  sesiones sanas (36b96010: 23.334 tokens de salida, $2,012743; 598796c2: 371, $0,149508). No
+  cuadran dos: 3416476c (copia, known issue) y **7bc000bb, nueva y sin explicar**: traza cuenta
+  más que el proceso (92.647 frente a 50.328 tokens de salida de Opus; $39,85 frente a $16,89).
+  No es una copia detectable (ningún `sessionId` ajeno, ningún `requestId` compartido) ni faltan
+  subagentes (traza cuenta de más, no de menos). [sin verificar] hipótesis: otro proceso escribía
+  la misma sesión tras el `startTime` (el fichero lleva `bridgeSessionId`). El test sigue verde
+  porque solo exige las sanas; la discrepancia se cuenta en el README, no se esconde.
+- **Instalación en limpio** (venv nuevo, `pip install .`): el paquete trae los 5 estáticos
+  (incl. `flame.js`) y `prices.toml`, crea `traza`, y servido así responde `/`, los estáticos y
+  la API con datos. [sin verificar] `pipx install git+https://…`: el repo aún no está publicado.

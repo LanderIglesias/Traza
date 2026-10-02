@@ -666,8 +666,9 @@ con 40 agentes del mismo tipo las etiquetas no distinguen, el **ancho** sí.
 2. **Test oráculo contra `cost-state`**: compara **tokens por modelo** (no dólares) calculados
    por traza con el `modelUsage` que escribe Claude Code, en la ventana **[`startTime` de
    `cost-state`, posición de la línea]**: `cost-state` mide el gasto del proceso desde que
-   arrancó, no el de toda la sesión (`findings.md` §4). [verificado] Coincidencia **exacta** en
-   2 de 3 sesiones con `cost-state` en este disco. Es escaso (4 líneas en todo el disco): es una
+   arrancó, no el de toda la sesión (`findings.md` §4). [verificado, 02-10-2026] Coincidencia
+   **exacta** (tokens y dólares) en 2 de las 4 sesiones con `cost-state` en este disco; las otras
+   dos son una copia (3416476c, known issue) y 7bc000bb, sin explicar (findings "F7 — cifras"). Es escaso (4 líneas en todo el disco): es una
    prueba puntual de exactitud, no una suite de regresión. Las llamadas internas (Haiku) se
    excluyen de la comparación. El test compara también **dólares** (tolerancia 1 µ$) y solo lee el
 fichero principal: las dos sesiones sanas no tienen carpeta `subagents/` [verificado]. [sin
