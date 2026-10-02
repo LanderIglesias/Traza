@@ -380,3 +380,26 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
   lo precede; suma el 100 % por construcción): 7bc000bb 12,0 h activo — modelo 43 %,
   herramientas 40 %, usuario 17 % (205 h inactivo); 3416476c 9,7 h — 53/28/20 (164 h);
   0d541f67 5,9 h — 38/29/34 (84 h); 0d6a5565 5,0 h — 51/22/27 (62 h).
+
+## F6.5 — Vista de trazas (02-10-2026)
+
+- **Timeline de la sesión real 0d6a5565:** 20 filas (principal + subagentes, orden del árbol),
+  910 barras de turno; 4 h 26 m activos, 58 h 52 m de pausas eliminadas del eje (20 pausas,
+  marcadas con línea sin ancho); calculada en 13 ms, 125 KB → con posiciones a décimas, menos.
+  La sesión de 277 $: 1.458 barras, 100 pausas, 18 ms.
+- **Desglose del principal:** modelo 53 %, herramientas 23 %, tú 23 %. Una herramienta de un
+  subagente (Haiku): 28 s activos, modelo 52 % / herramientas 48 %; su valor: 73 % escrituras de
+  caché, 22 % lecturas de caché, 5 % salida.
+- **En vivo:** dos subagentes `Explore` lanzados a la vez aparecen como filas nuevas con barras
+  **solapadas** en el eje (16.082,5 s y 16.082,6 s de inicio); pulsar una barra abre la vista de
+  juicio en ese turno, desplegado y resaltado. Duraron ~9 s en una sesión de 4 h 27 m activas:
+  rayas de 3 px (límite de escala; zoom a v2).
+- **Tema oscuro, contraste medido** (WCAG): tinta/tarjeta 15,3; tinta secundaria/tarjeta 7,5;
+  secundaria/bloque hundido 6,9; terciaria/tarjeta 4,73; estados (herramienta, pensando,
+  inactivo, error, terminado) 6,7–8,3. Fallos vistos y corregidos: la fila de sesión
+  seleccionada tenía un fondo claro escrito a mano (ilegible en oscuro) → token `--selected`; el
+  botón "All" pulsado no se distinguía en oscuro → tinta invertida.
+- **Refactor sin regresión:** `request_cost` es ahora la suma de `request_cost_parts` (la barra
+  de valor sale de la misma fórmula); el oráculo (tolerancia 1 µ$) sigue verde.
+- **Mutaciones del desglose:** 7 de 8 fallaron sus tests; la que sobrevivió era código muerto
+  (una comprobación de "misma respuesta" tras un texto que nunca cambiaba el resultado), quitado.

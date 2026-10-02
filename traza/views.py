@@ -7,8 +7,9 @@ from pathlib import Path
 
 from . import db
 from . import signals as sig
+from . import timeline as tl
 from .parser import prompt_text
-from .pricing import request_cost
+from .pricing import request_cost, request_cost_parts
 
 # Única constante del autómata (§7): más de 10 min sin tocar ningún fichero de la sesión = no
 # está viva, aunque su última línea diga que el modelo tenía el turno (sesión cerrada de golpe).
@@ -28,7 +29,7 @@ TEXT_GRACE_S = 30
 
 # Prompts que el modelo no contesta (en disco: 0 de 21 salidas de comando local, 1 de 9
 # interrupciones): tras ellos el agente espera al usuario, no "piensa".
-UNANSWERED_ORIGINS = frozenset({"interrupted", "local-command"})
+UNANSWERED_ORIGINS = sig.UNANSWERED_ORIGINS
 
 
 def agent_state(last_kind: str | None, tool_in_flight: bool, origin: str | None = None,
@@ -538,4 +539,96 @@ def agent_view(conn, session_id: str, agent_id: str, root=None, now: float | Non
                                 (session_id, agent_id)).fetchone()[0]
             result = {"id": last, "source": "final_text"} if last else None
     return {"agent": node, "task": task, "result": result,
+            "summary": agent_summary(conn, session_id, agent_id),
             "items": items[start:end], "start": start, "total": len(items)}
+
+
+# --- F6.5: vista de trazas (plan.md F6.5) ---------------------------------------------------------
+
+_TL_COLS = ("id", "kind", "tool_name", "tool_use_id", "request_id", "ts", "origin")
+
+
+def _timeline_events(conn, session_id: str, agent_id: str | None = None) -> dict[str, list[dict]]:
+    """{agente: eventos en orden de fichero} con lo que necesitan el eje y el desglose."""
+    sql = f"""SELECT agent_id, id, kind, tool_name, tool_use_id, request_id, timestamp, origin
+              FROM events WHERE session_id = ? {"AND agent_id = ?" if agent_id else ""}
+              ORDER BY agent_id, id"""
+    out = defaultdict(list)
+    for r in conn.execute(sql, (session_id, agent_id) if agent_id else (session_id,)):
+        out[r[0]].append(dict(zip(_TL_COLS, r[1:])))
+    return out
+
+
+def _bars(events: list[dict], axis: tl.ActiveAxis) -> list[dict]:
+    """Una barra por turno (§7.3: un turno = una petición). Tramo del modelo: desde el evento
+    que precede al turno (prompt o resultado: ahí empieza a pensar) hasta su último bloque.
+    Tramo de herramientas: de su primera llamada a su último resultado."""
+    turns, owner = {}, {}
+    for i, e in enumerate(events):
+        if e["kind"] in ("text", "tool_use") and e["request_id"]:
+            t = turns.get(e["request_id"])
+            if t is None:
+                prev = events[i - 1]["ts"] if i else e["ts"]
+                t = turns[e["request_id"]] = {"event": e["id"], "start": prev, "model_end": e["ts"],
+                                              "tool_start": None, "tool_end": None}
+            t["model_end"] = e["ts"]
+            if e["kind"] == "tool_use":
+                owner[e["tool_use_id"]] = t
+                t["tool_start"] = t["tool_start"] or e["ts"]
+        elif e["kind"] == "tool_result" and e["tool_use_id"] in owner:
+            owner[e["tool_use_id"]]["tool_end"] = e["ts"]
+    out = []
+    for t in turns.values():
+        start, end = axis.offset(t["start"]), axis.offset(t["model_end"])
+        if start is None or end is None:
+            continue
+        bar = {"event": t["event"], "start": round(start, 1), "model_end": round(max(start, end), 1),
+               "tool_start": None, "tool_end": None}
+        if t["tool_start"]:
+            ts0 = axis.offset(t["tool_start"])
+            ts1 = axis.offset(t["tool_end"]) if t["tool_end"] else axis.total   # en curso
+            if ts0 is not None and ts1 is not None:
+                bar["tool_start"], bar["tool_end"] = round(ts0, 1), round(max(ts0, ts1), 1)
+        out.append(bar)
+    return out
+
+
+def _iso_s(secs: float | None) -> str | None:
+    return None if secs is None else datetime.fromtimestamp(secs, timezone.utc).isoformat(
+        timespec="seconds")
+
+
+def session_timeline(conn, session_id: str) -> dict | None:
+    """Timeline de una sesión (F6.5): un eje de tiempo activo COMÚN a todos sus agentes (los
+    subagentes en paralelo caen en paralelo) y sus barras por turno."""
+    by_agent = _timeline_events(conn, session_id)
+    if not by_agent:
+        return None
+    axis = tl.ActiveAxis(e["ts"] for evs in by_agent.values() for e in evs)
+    breaks = [{"at": round(b["at"], 1), "idle_s": round(b["idle_s"])} for b in axis.breaks]
+    return {"axis": {"total": axis.total, "breaks": breaks,
+                     "start": _iso_s(axis.start), "end": _iso_s(axis.end)},
+            "agents": {aid: {"bars": _bars(evs, axis),
+                             "breakdown": tl.breakdown(evs)} for aid, evs in by_agent.items()}}
+
+
+def agent_summary(conn, session_id: str, agent_id: str) -> dict:
+    """Resumen de un agente (F6.5, "Run Summary"): tiempo activo y de reloj, desglose, modelos,
+    tokens y barra de valor de sus peticiones propias (las de las que es dueño, §6.2)."""
+    evs = _timeline_events(conn, session_id, agent_id).get(agent_id, [])
+    axis = tl.ActiveAxis(e["ts"] for e in evs)
+    rids = {r for r, in conn.execute("""SELECT request_id FROM request_owner
+                                        WHERE owner_session_id = ? AND owner_agent_id = ?""",
+                                     (session_id, agent_id))}
+    reqs = [r for r in db.requests(conn, session_id) if r.request_id in rids]
+    outs = [r.tokens.output for r in reqs]
+    reads = [(r.tokens.input, r.tokens.cache_read, r.tokens.cache_write_5m,
+              r.tokens.cache_write_1h) for r in reqs]
+    return {"active_s": axis.total, "wall_start": _iso_s(axis.start), "wall_end": _iso_s(axis.end),
+            "breakdown": tl.breakdown(evs),
+            "models": sorted({r.model for r in reqs if r.model and r.model != "<synthetic>"}),
+            "requests": len(reqs),
+            # entrada incluida la caché (lo que el modelo leyó); None si alguna no lo sabe
+            "tokens": {"input": None if any(None in x for x in reads) else sum(map(sum, reads)),
+                       "output": None if None in outs else sum(outs)},
+            "value": tl.value_split([request_cost_parts(r) for r in reqs])}

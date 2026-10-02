@@ -130,7 +130,7 @@ heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `
   al evento.
 - La barra global muestra `unknown`, tipos ignorados (con desglose) y coste interno no desglosado.
 
-## F6.5 — Vista de trazas: timeline, resumen, desglose de tiempo y temas  ✅ aprobada (con recorte)
+## F6.5 — Vista de trazas: timeline, resumen, desglose de tiempo y temas  ✅ tests verdes y verificado en vivo, pendiente de revisión
 
 Origen: el día de uso (02-10-2026). El autor quiere tener en un solo sitio toda la información
 de los agentes y las sesiones de Claude Code, al estilo de su referencia (panel de
@@ -172,6 +172,10 @@ El conmutador **Tree | Timeline** son dos pestañas dentro del panel de trabajo.
 
 **Recortado en la aprobación, a v2:** tendencias de 14 días en las tarjetas, buscador de
 sesiones y filtro 24 h / 7 d / todo.
+
+**Visto al probar, a v2:** zoom en la timeline (un subagente de 9 s en una sesión de 4 h 27 m
+activas es una raya de 3 px: correcto a esa escala, poco legible); la marca "skill fork" de los
+huérfanos en las filas de la timeline (en el árbol sí está).
 
 **Decisiones técnicas de la aprobación (escritas antes de programar):**
 1. **Tree | Timeline: dos pestañas dentro del panel de trabajo**, cada una con su propio layout

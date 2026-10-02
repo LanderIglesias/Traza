@@ -14,10 +14,20 @@ def price_key(model: str) -> str:
     return _DATE_SUFFIX.sub("", model)
 
 
+PARTS = ("input", "output", "cache_read", "cache_write", "web_search")
+
+
 def request_cost(req: Request, prices: dict = PRICES) -> float | None:
-    """USD estimados. None = "no lo sé" (modelo, tokens o modificador desconocido), nunca 0."""
+    """USD a precios públicos de la API. None = "no lo sé" (modelo, tokens o modificador
+    desconocido), nunca 0. Es la suma de request_cost_parts: una sola fórmula."""
+    parts = request_cost_parts(req, prices)
+    return None if parts is None else sum(parts.values())
+
+
+def request_cost_parts(req: Request, prices: dict = PRICES) -> dict[str, float] | None:
+    """El valor de una petición por tipo de token (la barra de valor, F6.5). None = sin precio."""
     if req.model == "<synthetic>":
-        return 0.0  # mensajes generados por Claude Code, sin llamada a la API
+        return dict.fromkeys(PARTS, 0.0)  # mensajes generados por Claude Code, sin llamada a la API
     table = prices["models"].get(price_key(req.model or ""))
     if table is None or None in req.tokens:
         return None
@@ -28,9 +38,11 @@ def request_cost(req: Request, prices: dict = PRICES) -> float | None:
     geo = 1.0 if req.inference_geo is None else prices["inference_geo"].get(req.inference_geo)
     if table is None or geo is None:
         return None
-    t = req.tokens
-    tokens_usd = (t.input * table["input"] + t.output * table["output"]
-                  + t.cache_read * table["cache_read"] + t.cache_write_5m * table["cache_write_5m"]
-                  + t.cache_write_1h * table["cache_write_1h"]) / 1_000_000
+    t, m = req.tokens, geo / 1_000_000
     # ponytail: el ×1,1 de inference_geo no se aplica a las búsquedas web (sin verificar; 0 en disco)
-    return tokens_usd * geo + (req.web_search_requests or 0) * prices["web_search_per_request"]
+    return {"input": t.input * table["input"] * m,
+            "output": t.output * table["output"] * m,
+            "cache_read": t.cache_read * table["cache_read"] * m,
+            "cache_write": (t.cache_write_5m * table["cache_write_5m"]
+                            + t.cache_write_1h * table["cache_write_1h"]) * m,
+            "web_search": (req.web_search_requests or 0) * prices["web_search_per_request"]}

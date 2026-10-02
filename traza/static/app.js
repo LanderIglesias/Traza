@@ -5,7 +5,7 @@ const $ = (id) => document.getElementById(id);
 const SVG_NS = "http://www.w3.org/2000/svg";   // identificador del estándar, no una petición
 const STATE_LABEL = { tool: "Running tool", thinking: "Thinking", idle: "Idle", done: "Done" };
 // collapsed: "sesión/agente" plegados; sobrevive a los re-render de cada tick SSE (F4)
-const ui = { data: null, filter: "all", selected: null, collapsed: new Set(), sort: null };
+const ui = { data: null, filter: "all", selected: null, collapsed: new Set(), sort: null, tab: "tree" };
 const ORPHAN_MARK = { sin_tool_use_id: "skill fork", padre_no_encontrado: "parent unknown" };
 
 // --- formato ---------------------------------------------------------------------------------
@@ -198,9 +198,13 @@ async function renderPanel() {
   $("p-models").replaceChildren(...Object.entries(s.models).map(([m, n]) =>
     el("li", {}, el("span", { text: m }), el("span", { className: "n", text: `${n.toLocaleString("en-US")} ${n === 1 ? "request" : "requests"}` }))));
   const judging = ui.judge?.sid === s.id;
-  $("p-details").hidden = $("tree-h").hidden = $("tree-wrap").hidden = judging;
+  $("p-details").hidden = judging;
+  document.querySelector(".tabs").hidden = judging;
+  $("tree-wrap").hidden = judging || ui.tab !== "tree";
+  $("trace").hidden = judging || ui.tab !== "trace";
   $("judge").hidden = !judging;
   if (judging) renderJudge();
+  else if (ui.tab === "trace") renderTrace(s);
   else renderTree(s);
 }
 
@@ -451,6 +455,7 @@ function paintJudge(j, v) {
   $("j-sub").textContent = a.description || (a.orphan ? ORPHAN_MARK[a.orphan] : "");
   $("j-state").replaceWith(Object.assign(pill(a.state), { id: "j-state" }));
   $("j-cost").textContent = money(a.cost, a.unpriced);
+  renderSummary(v.summary);
 
   $("j-task-block").hidden = v.task === null;
   if (v.task !== null && $("j-task").dataset.content !== String(v.task)) setContentId($("j-task"), v.task);
@@ -485,7 +490,7 @@ function paintJudge(j, v) {
 
 // Llevar a la alerta pulsada en el árbol: su turno abierto, centrado y con el foco.
 function goToEvent(j, v) {
-  const li = $("j-items").querySelector(`li[data-sig~="${j.focus}"]`);
+  const li = $("j-items").querySelector(`li[data-ev~="${j.focus}"]`);
   if (!li) {
     if (v.start > 0) { j.from = 0; j.sig = ""; renderJudge(); }   // está en turnos anteriores
     else j.focus = null;
@@ -533,7 +538,7 @@ function itemNode(j, it, isLast) {
   if (it.kind !== "turn") {
     const e = it.event;
     const label = it.kind === "prompt" ? PROMPT_LABEL[e.origin] || "Prompt" : SYSTEM_LABEL[e.kind] || e.kind;
-    return el("li", { className: `t-item t-${it.kind}`, "data-sig": (it.signals || []).map((x) => x.event).join(" ") },
+    return el("li", { className: `t-item t-${it.kind}`, "data-ev": String(e.id) },
       details(j, `e${e.id}`, false,
         [el("span", { className: "t-kind", text: label }), el("time", { text: hhmmss(e.ts) }), ...signalChips(it.signals)],
         pre(e.id)));
@@ -567,7 +572,8 @@ function itemNode(j, it, isLast) {
         el("span", { className: "t-res-h", text: resLabel }),
         r ? pre(r.id) : null));
   }));
-  return el("li", { className: "t-turn", "data-sig": (it.signals || []).map((x) => x.event).join(" ") },
+  const evIds = it.events.flatMap((e) => (e.result ? [e.id, e.result.id] : [e.id])).join(" ");
+  return el("li", { className: "t-turn", "data-ev": evIds },
     details(j, it.request_id || `e${it.events[0].id}`, isLast, summary, body));
 }
 
@@ -586,4 +592,180 @@ async function fillContent(scope) {
     n.textContent = c.ok ? c.text : "Content unavailable";   // textContent: nunca HTML (§9)
     n.dataset.state = c.ok ? (c.truncated ? "truncated" : "ok") : "unavailable";
   }
+}
+
+// --- F6.5: tema, pestañas, timeline y resúmenes ----------------------------------------------------
+// Tema: sigue al sistema hasta que el usuario elige; la elección vive en este navegador.
+const THEME_KEY = "traza-theme";
+const systemDark = matchMedia("(prefers-color-scheme: dark)");
+function storedTheme() { try { return localStorage.getItem(THEME_KEY); } catch { return null; } }
+function applyTheme() {
+  const t = storedTheme() || (systemDark.matches ? "dark" : "light");
+  document.documentElement.dataset.theme = t;
+  $("theme").setAttribute("aria-label", t === "dark" ? "Switch to light theme" : "Switch to dark theme");
+}
+$("theme").addEventListener("click", () => {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  try { localStorage.setItem(THEME_KEY, next); } catch { /* sin almacenamiento: solo esta visita */ }
+  document.documentElement.dataset.theme = next;
+  applyTheme();
+});
+systemDark.addEventListener("change", applyTheme);
+applyTheme();
+
+// Pestañas Tree | Timeline (plan F6.5, punto 1): dos vistas con su propio layout.
+for (const b of document.querySelectorAll(".tabs [role=tab]")) {
+  b.addEventListener("click", () => selectTab(b.dataset.tab));
+  b.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    const other = document.querySelector(`.tabs [data-tab="${b.dataset.tab === "tree" ? "trace" : "tree"}"]`);
+    selectTab(other.dataset.tab); other.focus();
+  });
+}
+function selectTab(tab) {
+  ui.tab = tab;
+  for (const b of document.querySelectorAll(".tabs [role=tab]")) {
+    const on = b.dataset.tab === tab;
+    b.setAttribute("aria-selected", String(on));
+    b.tabIndex = on ? 0 : -1;
+  }
+  renderPanel();
+}
+
+const fmtDur = (s) => {
+  if (s == null) return "?";
+  s = Math.round(s);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+  return `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
+};
+const fmtWhen = (iso) => (iso ? new Date(iso).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "?");
+
+// Barra apilada con su leyenda: [[clave, etiqueta, valor, texto]]
+function stackBar(label, rows) {
+  const total = rows.reduce((a, r) => a + (r[2] || 0), 0);
+  const bar = el("div", { className: "stack", role: "img",
+    "aria-label": `${label}: ` + rows.map((r) => `${r[1]} ${r[3]}`).join(", ") },
+    ...rows.filter((r) => r[2] > 0).map((r) => {
+      const s = el("span", { className: `k-${r[0]}`, title: `${r[1]}: ${r[3]}` });
+      s.style.flex = `${r[2]} 1 0`;
+      return s;
+    }));
+  const pct = (v) => (total ? `${Math.round((v / total) * 100)} %` : "");
+  const legend = el("div", { className: "stack-legend" }, ...rows.map((r) =>
+    el("span", {}, el("span", { className: `sw k-${r[0]}` }), `${r[1]} `, el("b", { text: r[3] }), ` ${pct(r[2] || 0)}`)));
+  return el("div", { className: "breakdown" }, el("h4", { text: label }), bar, legend);
+}
+
+// Desglose del tiempo activo (plan F6.5): modelo / herramientas / tú
+function timeBar(b) {
+  return stackBar("Where the active time went", [
+    ["model", "Model", b.model, fmtDur(b.model)],
+    ["tool", "Tools", b.tool, fmtDur(b.tool)],
+    ["user", "You", b.user, fmtDur(b.user)]]);
+}
+
+// Barra de valor (plan F6.5): en qué se va el valor a precios de la API
+function valueBar(v) {
+  if (!v.parts) return el("p", { className: "sub", text: "Value at API prices: ? (no request has a known price)" });
+  const p = v.parts;
+  const head = `Where the value goes · ${money(v.cost, v.unpriced)}` + (v.unpriced ? ` (${v.unpriced} requests without a price not included)` : "");
+  return stackBar(head, [
+    ["cache_read", "Cache reads", p.cache_read, money(p.cache_read)],
+    ["cache_write", "Cache writes", p.cache_write, money(p.cache_write)],
+    ["output", "Output", p.output, money(p.output)],
+    ["input", "Input", p.input, money(p.input)],
+    ...(p.web_search ? [["web_search", "Web search", p.web_search, money(p.web_search)]] : [])]);
+}
+
+function facts(cls, pairs) {
+  return el("dl", { className: cls }, ...pairs.map(([k, v]) => el("div", {}, el("dt", { text: k }), el("dd", { text: v }))));
+}
+
+function renderSummary(sm) {
+  if (!sm) return $("j-summary").replaceChildren();
+  const tok = (n) => (n == null ? "?" : n.toLocaleString("en-US"));
+  $("j-summary").replaceChildren(
+    facts("sum-facts", [
+      ["Active time", fmtDur(sm.active_s)],
+      ["Wall clock", `${fmtWhen(sm.wall_start)} → ${fmtWhen(sm.wall_end)}`],
+      ["Model", sm.models.join(", ") || "–"],
+      ["Requests", String(sm.requests)],
+      ["Tokens in (with cache)", tok(sm.tokens.input)],
+      ["Tokens out", tok(sm.tokens.output)]]),
+    timeBar(sm.breakdown),
+    valueBar(sm.value));
+}
+
+// Filas de la timeline en el orden del árbol, todo desplegado
+function treeRows(s) {
+  const kids = new Map();
+  for (const n of s.tree) {
+    const p = n.orphan ? "(orphan)" : n.parent ?? "(root)";
+    if (!kids.has(p)) kids.set(p, []);
+    kids.get(p).push(n);
+  }
+  const out = [];
+  const walk = (parent, depth) => { for (const n of kids.get(parent) || []) { out.push([n, depth]); walk(n.id, depth + 1); } };
+  walk("(root)", 0); walk("(orphan)", 0);
+  return out;
+}
+
+let traceSeq = 0;
+async function renderTrace(s) {
+  const seq = ++traceSeq;
+  const r = await fetch(`/api/sessions/${encodeURIComponent(s.id)}/timeline`);
+  if (seq !== traceSeq || !r.ok) return;
+  const t = await r.json();
+  if (seq !== traceSeq) return;
+  const ax = t.axis, total = ax.total || 1;
+  const pct = (x) => `${Math.max(0, Math.min(100, (x / total) * 100))}%`;
+  const idle = ax.breaks.reduce((a, b) => a + b.idle_s, 0);
+  $("trace-facts").replaceChildren(...facts("x", [
+    ["Active time", fmtDur(ax.total)],
+    ["Paused (not drawn)", `${fmtDur(idle)} in ${plural(ax.breaks.length, "pause")}`],
+    ["Wall clock", `${fmtWhen(ax.start)} → ${fmtWhen(ax.end)}`]]).children);
+  const main = t.agents.main;
+  $("trace-breakdown").replaceChildren(...(main ? [timeBar(main.breakdown)] : []));
+
+  const breakTpl = ax.breaks.map((b) => {
+    const d = el("div", { className: "trace-break", title: `${fmtDur(b.idle_s)} paused here` });
+    d.style.left = pct(b.at);
+    return d;
+  });
+  const rows = treeRows(s).map(([n, depth]) => {
+    const a = t.agents[n.id] || { bars: [] };
+    const name = n.id === "main" ? "Main agent" : n.type || `Agent ${n.id.slice(0, 7)}`;
+    const label = el("div", { className: "trace-label", text: name, title: n.description || name });
+    label.style.setProperty("--depth", depth);
+    const bars = a.bars.map((b) => {
+      const end = Math.max(b.model_end, b.tool_end ?? 0);
+      const btn = el("button", { type: "button", className: "trace-bar",
+        "aria-label": `${name}: turn at ${fmtDur(b.start)}, model ${fmtDur(b.model_end - b.start)}` +
+          (b.tool_start != null ? `, tools ${fmtDur(b.tool_end - b.tool_start)}` : "") });
+      btn.style.left = pct(b.start);
+      btn.style.width = pct(end - b.start);
+      const w = end - b.start || 1;
+      const seg = (cls, from, to) => {
+        const sp = el("span", { className: `seg ${cls}` });
+        sp.style.left = `${((from - b.start) / w) * 100}%`;
+        sp.style.width = `${((to - from) / w) * 100}%`;
+        return sp;
+      };
+      btn.append(seg("seg-model", b.start, b.model_end));
+      if (b.tool_start != null) btn.append(seg("seg-tool", b.tool_start, b.tool_end));
+      btn.addEventListener("click", () => openJudge(s.id, n.id, b.event));
+      return btn;
+    });
+    return el("div", { className: "trace-row" }, label,
+      el("div", { className: "trace-track" }, ...breakTpl.map((d) => d.cloneNode()), ...bars));
+  });
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => {
+    const sp = el("span", { text: fmtDur(ax.total * f) });
+    sp.style.left = `${f * 100}%`;
+    if (f === 1) sp.style.transform = "translateX(-100%)";
+    return sp;
+  });
+  $("trace-chart").replaceChildren(...rows,
+    el("div", { className: "trace-axis" }, el("span", { text: "Active time →" }), el("div", { className: "trace-ticks" }, ...ticks)));
 }

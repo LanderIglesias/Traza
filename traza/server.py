@@ -179,6 +179,14 @@ def create_app(db_path, root, port: int, interval: float = 0.5,
             raise HTTPException(404)
         return v
 
+    @app.get("/api/sessions/{session_id}/timeline")
+    def session_timeline(session_id: str):
+        with reader(db_path) as conn:
+            t = views.session_timeline(conn, session_id)
+        if t is None:
+            raise HTTPException(404)
+        return t
+
     @app.get("/api/content")
     def content(ids: str = ""):
         # frontera: solo enteros separados por comas, como mucho CONTENT_MAX_IDS (§6.5)

@@ -13,6 +13,9 @@ HUNG_AFTER_S = 600   # herramienta sin resultado: el mismo umbral que "agente pa
 CLOSED_AFTER_S = 1800  # sesión sin escribir nada: se da por cerrada. ponytail: heurística; el
                        # JSONL no dice si Claude Code sigue en marcha. 3× la herramienta más
                        # larga en disco que no espera al usuario (10 min, el tope de Bash).
+# Prompts que el modelo no contesta (en disco: 0 de 21 salidas de comando local, 1 de 9
+# interrupciones): tras ellos el turno es del usuario (§7.1 y desglose de tiempo, F6.5).
+UNANSWERED_ORIGINS = frozenset({"interrupted", "local-command"})
 # Esperan una respuesta humana (en disco, hasta 115 min): nunca están "colgadas".
 WAITS_FOR_USER = frozenset({"AskUserQuestion", "ExitPlanMode"})
 

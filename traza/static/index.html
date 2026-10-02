@@ -27,6 +27,7 @@
         <button type="button" data-filter="all" aria-pressed="true">All</button>
       </div>
       <p class="conn" id="conn" data-state="connecting"><span class="dot" aria-hidden="true"></span><span id="conn-text">Connecting</span></p>
+      <button type="button" class="theme" id="theme" aria-label="Switch to dark theme"><svg viewBox="0 0 24 24" aria-hidden="true" class="i-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg viewBox="0 0 24 24" aria-hidden="true" class="i-moon"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg></button>
     </header>
 
     <section class="cards" aria-label="Summary">
@@ -95,8 +96,12 @@
             </dl>
             <ul class="models" id="p-models" aria-label="Requests per model"></ul>
           </details>
-          <h3 id="tree-h">Agents</h3>
-          <div class="tree-wrap" id="tree-wrap">
+          <div class="tabs" role="tablist" aria-label="Agents view">
+            <button type="button" role="tab" id="tab-tree" aria-controls="tree-wrap" aria-selected="true" data-tab="tree">Tree</button>
+            <button type="button" role="tab" id="tab-trace" aria-controls="trace" aria-selected="false" data-tab="trace" tabindex="-1">Timeline</button>
+          </div>
+          <h3 id="tree-h" class="sr-only">Agents</h3>
+          <div class="tree-wrap" id="tree-wrap" role="tabpanel" aria-labelledby="tab-tree">
             <table class="tree" aria-labelledby="tree-h">
               <thead>
                 <tr>
@@ -112,6 +117,12 @@
               <tbody id="orphan-rows" class="orphans"></tbody>
             </table>
           </div>
+          <section class="trace" id="trace" role="tabpanel" aria-labelledby="tab-trace" hidden>
+            <dl class="trace-facts" id="trace-facts"></dl>
+            <div class="breakdown" id="trace-breakdown"></div>
+            <div class="trace-legend" aria-hidden="true"><span><span class="sw sw-model"></span>Model</span><span><span class="sw sw-tool"></span>Tools</span><span><span class="sw sw-break"></span>Pause (removed from the axis)</span></div>
+            <div class="trace-chart" id="trace-chart"></div>
+          </section>
           <section class="judge" id="judge" hidden aria-labelledby="j-title">
             <button type="button" class="back" id="j-back">← All agents</button>
             <header class="j-head">
@@ -124,6 +135,7 @@
                 <span class="j-cost" id="j-cost" title="Value at API prices of this agent's own requests"></span>
               </div>
             </header>
+            <div class="j-summary" id="j-summary"></div>
             <div class="j-block" id="j-task-block">
               <h4>Task</h4>
               <pre class="j-pre" id="j-task"></pre>
