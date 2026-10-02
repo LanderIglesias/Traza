@@ -13,6 +13,8 @@ dependencies = ["fastapi>=0.110", "uvicorn>=0.29"]
 
 [project.optional-dependencies]
 dev = ["pytest", "httpx"]
+# solo para regrabar docs/demo.gif (tools/record_demo.py); además: `playwright install chromium` y ffmpeg
+demo = ["playwright"]
 
 [project.urls]
 Repository = "https://github.com/LanderIglesias/traza"

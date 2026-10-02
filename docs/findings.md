@@ -532,3 +532,10 @@ Sin sandbox en este Windows: revisión de código + experimentos solo con la std
   el subagente nuevo **sube** mientras gasta ($0,34 y cuarto a los 5 s), con la cabecera a la vista.
 - **Verificado en el render:** la barra de la sesión del Flame sale neutra (el arreglo de CSS
   que no se había podido ver con Chrome desconectado).
+- **Barra de salud del GIF:** con el primer generador decía "0 lines ignored", y un revisor
+  podría pensar que el panel descarta datos sin decirlo. El generador escribe ahora las líneas que
+  Claude Code escribe y traza ignora adrede (`attachment` de hooks, `file-history-snapshot`,
+  `queue-operation`, `system:stop_hook_summary`; en disco real `attachment` es el tipo más
+  frecuente): "0 unknown · 112 ignored (4 types)". Regrabado: 13,8 s, 3,9 MB.
+- **Playwright no es dependencia de traza:** extra opcional `demo` en pyproject; `pipx install`
+  no lo descarga. ffmpeg, aparte (no es de pip).

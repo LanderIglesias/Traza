@@ -501,7 +501,9 @@ Decisiones de F3 (revisión del brief, 30-09-2026):
 
 - **Árbol:** colapsable; el estado de colapsado vive en memoria del JS y los ticks SSE no lo
   resetean. Coste: **propio en grande**; en nodos con hijos, **acumulado pequeño en gris**.
-  Columna ordenable **coste por token de salida**.
+  Columnas ordenables (F4): **valor propio**, **incluidos subagentes** y **coste por token de
+  salida**; cada clic: mayor primero → menor primero → sin orden. Ordena hermanos dentro de su
+  padre (el árbol no se rompe). Sin test automático (JS de navegador, plan "Deudas").
 - **Vista de juicio:** encargo arriba, timeline de herramientas en medio, resultado devuelto al
   padre abajo. Agrupada por turno, turnos cerrados plegados, últimos 50 turnos + "cargar
   anteriores" (sin virtual scrolling en v1). Implementada en F5 (`views.agent_view`,

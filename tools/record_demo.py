@@ -4,7 +4,8 @@
 
 Una idea en ~12 s: en una sesión en vivo, el principal lanza dos subagentes; aparecen en el árbol
 (ordenado por valor) trabajando y suben mientras gastan, terminan, y el Flame enseña quién se
-llevó el valor. Necesita Playwright (con Chromium) y ffmpeg; son herramientas de grabación, no dependencias de traza.
+llevó el valor. Necesita `pip install -e .[demo]`, `playwright install chromium` y ffmpeg:
+herramientas de grabación, no dependencias de traza (pipx install no las descarga).
 """
 import shutil
 import subprocess

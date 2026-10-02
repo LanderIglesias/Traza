@@ -72,6 +72,17 @@ class Log:
 
     def prompt(self, t: datetime, text: str) -> None:
         self.line(t, type="user", message={"role": "user", "content": text})
+        self.hook(t, "UserPromptSubmit")
+
+    # Líneas que traza ignora adrede, como en un disco real (el más frecuente: attachment). Sin
+    # ellas la barra de salud diría "0 lines ignored" y parecería que no se descarta nada.
+    def hook(self, t: datetime, event: str) -> None:
+        self.line(t + timedelta(milliseconds=120), type="attachment", attachment={
+            "type": "hook_success", "hookName": event, "content": "", "stdout": "", "exitCode": 0})
+
+    def snapshot(self, t: datetime) -> None:
+        self.raw({"type": "file-history-snapshot", "messageId": str(uuid.UUID(int=self.rnd.getrandbits(128))),
+                  "snapshot": {"trackedFileBackups": {}, "timestamp": iso(t)}, "isSnapshotUpdate": False})
 
     def reply(self, t: datetime, model: str, blocks: list, ctx: int, out: int, stop="tool_use") -> datetime:
         """Una petición a la API: un bloque por línea, todas con el mismo requestId y usage."""
@@ -122,6 +133,8 @@ class Log:
             t = self.reply(t, model, blocks, ctx, r.randint(out_max // 6, out_max))
             t += timedelta(seconds=r.uniform(1, 25 if name == "Bash" else 4))
             self.results(t, [(tid, "ok" if name == "Edit" else "(output)")])
+            if name == "Edit":
+                self.snapshot(t)
         return t
 
 
@@ -161,6 +174,8 @@ def session(root: Path, proj: str, title: str, start: datetime, ask: str, rnd: r
     d = root / f"-home-dev-code-{proj}"
     main = Log(d / f"{sid}.jsonl", sid, f"/home/dev/code/{proj}", rnd)
     main.raw({"type": "ai-title", "aiTitle": title, "sessionId": sid})
+    for op in ("enqueue", "dequeue"):
+        main.raw({"type": "queue-operation", "operation": op, "timestamp": iso(start), "sessionId": sid})
     main.prompt(start, ask)
     t, ctx = start, 42000
     for step, arg in plan:
@@ -171,6 +186,8 @@ def session(root: Path, proj: str, title: str, start: datetime, ask: str, rnd: r
             t, ctx = wave(d, main, t, model, ctx, arg)
     t = main.reply(t, model, [{"type": "text", "text": "Done. Summary of the changes is above."}],
                    ctx, 700, stop="end_turn")
+    main.line(t, type="system", subtype="stop_hook_summary", hookCount=1, hookErrors=[],
+              preventedContinuation=False, level="suggestion")
     return main, t
 
 
