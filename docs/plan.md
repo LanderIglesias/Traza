@@ -173,6 +173,34 @@ El conmutador **Tree | Timeline** son dos pestañas dentro del panel de trabajo.
 **Recortado en la aprobación, a v2:** tendencias de 14 días en las tarjetas, buscador de
 sesiones y filtro 24 h / 7 d / todo.
 
+**Decisiones técnicas de la aprobación (escritas antes de programar):**
+1. **Tree | Timeline: dos pestañas dentro del panel de trabajo**, cada una con su propio layout
+   (los ejes son incompatibles: profundidad frente a tiempo). La pestaña elegida se conserva al
+   cambiar de sesión; la vista de juicio sigue abriéndose desde las dos.
+2. **Móvil (390 px):** la Gantt no desaparece ni pide scroll horizontal: cada fila se **apila**
+   (nombre del agente arriba, su barra debajo a todo el ancho). El eje es el mismo; solo cambia
+   dónde va la etiqueta. Se verifica con la sesión real más grande y subagentes en paralelo.
+3. **Compresión de huecos: el eje es tiempo activo acumulado.** Los huecos de inactividad
+   (≥ 5 min entre dos eventos de **cualquier** agente de la sesión) se **eliminan** del eje: ni
+   escala ni "⋯" de ancho fijo (con cientos de pausas el trabajo real seguiría invisible). Se
+   marcan con una línea fina vertical sin ancho y un título ("3 h idle"). El reloj (inicio, fin,
+   duración de reloj) va en la cabecera. Un eje común para toda la sesión: los subagentes en
+   paralelo caen en paralelo.
+4. **Barra de valor con precios desconocidos:** misma política que F6. Cada tramo (lectura de
+   caché, escritura de caché, salida, entrada, búsqueda web) suma solo lo que tiene precio; si
+   alguna petición no tiene precio, la cifra lleva "+" y la barra no se presenta como completa;
+   si ninguna lo tiene, "?". El `?` de plausibilidad solo si la **suma** del agente es
+   implausible (no si lo es un sumando). La barra sale de `request_cost_parts`, la misma función
+   de la que sale el valor (`request_cost` = su suma): cuadra por construcción.
+5. **Desglose modelo / herramientas / tú: un test por caso raro**, como las señales:
+   herramienta de 0 s; timestamps desordenados (hueco negativo: cuenta 0, no resta); texto del
+   modelo seguido de una herramienta de la **misma** respuesta (es modelo, no tú); texto final
+   (es tuyo hasta tu siguiente prompt); prompt que el modelo no contesta (interrupción, comando
+   local: lo que sigue es tuyo); `AskUserQuestion`/`ExitPlanMode` (tuyo); un hueco ≥ 5 min (no
+   cuenta, es inactividad); y el `Agent` de primer plano: cuenta como herramienta del principal
+   (el trabajo del subagente se ve en su propia fila, no se suma al principal; el desglose de
+   la sesión es el del principal, la perspectiva del reloj).
+
 **Hecho cuando:**
 - Test: el desglose de tiempo de una fixture con huecos conocidos da los segundos exactos de
   cada categoría y suma el tiempo activo; un hueco de > 5 min no cuenta.
