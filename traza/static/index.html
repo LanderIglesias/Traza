@@ -99,6 +99,7 @@
           <div class="tabs" role="tablist" aria-label="Agents view">
             <button type="button" role="tab" id="tab-tree" aria-controls="tree-wrap" aria-selected="true" data-tab="tree">Tree</button>
             <button type="button" role="tab" id="tab-trace" aria-controls="trace" aria-selected="false" data-tab="trace" tabindex="-1">Timeline</button>
+            <button type="button" role="tab" id="tab-flame" aria-controls="flame" aria-selected="false" data-tab="flame" tabindex="-1">Flame</button>
           </div>
           <h3 id="tree-h" class="sr-only">Agents</h3>
           <div class="tree-wrap" id="tree-wrap" role="tabpanel" aria-labelledby="tab-tree">
@@ -122,6 +123,10 @@
             <div class="breakdown" id="trace-breakdown"></div>
             <div class="trace-legend" aria-hidden="true"><span><span class="sw sw-model"></span>Model</span><span><span class="sw sw-tool"></span>Tools</span><span><span class="sw sw-user"></span>You</span><span><span class="sw sw-break"></span>Pause, marked on the axis (removed from it)</span></div>
             <div class="trace-chart" id="trace-chart"></div>
+          </section>
+          <section class="flame" id="flame" role="tabpanel" aria-labelledby="tab-flame" hidden>
+            <p class="flame-legend">Width = value at API prices, own plus every subagent below. The faded block under an agent is its own work. Colors mark depth.<span id="flame-note"></span></p>
+            <div class="flame-chart" id="flame-chart"></div>
           </section>
           <section class="judge" id="judge" hidden aria-labelledby="j-title">
             <button type="button" class="back" id="j-back">← All agents</button>

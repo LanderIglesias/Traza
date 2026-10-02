@@ -473,3 +473,46 @@ Sin sandbox en este Windows: revisión de código + experimentos solo con la std
   seguido (reproducido: Bash a los 10 s, respuesta a los 30 s, subagente hasta 1000 s → 970 s de
   "herramienta" inventados, y la barra dejaba de cuadrar con el desglose). Ahora solo la de la
   última respuesta sin prompt posterior, la misma regla que el estado en vivo y la colgada.
+
+## Antes de F7 — Flame (02-10-2026)
+
+- **Tests:** 9 casos de layout en `node --test` (raíz sola, 1:1 sin y con coste propio, tres
+  niveles, un solo hijo, profundidad excedida → un "N more", hermanos bajo el mínimo, huérfanos,
+  sin precio) + invariantes sobre el árbol de la fixture (área terminal = 100 %, nada se sale de
+  su padre, raíz = total) con y sin agregados. **Mutaciones: 7 de 8 detectadas**; la que
+  sobrevivió (colgar un huérfano de su `parent`) era una condición muerta: un huérfano no tiene
+  `parent` por construcción (`db.orphans`; los 17 del disco, todos con `parent` nulo). Quitada.
+- **Verificado en Chrome** (escritorio 740 px y móvil 302 px, claro y oscuro): la raíz coincide
+  con el valor de la sesión en las tres probadas — 0d6a5565 (43 agentes) $165,03; e093c05a (40
+  agentes) $372,33; 5a1f386d (25 agentes) $10,60. Rectángulos: 11, 6 y 27; render 1,8 ms, 0,5 ms
+  y 2,4 ms. Clic y Enter abren el agente; al volver, foco en el mismo bloque; sin scroll
+  horizontal en móvil.
+- **Lo que enseña:** en 0d6a5565 y e093c05a el principal es el 90–96 % del valor (casi todo
+  trabajo propio): los subagentes, juntos, son menos del 10 % y casi todos caen bajo 3 px. En
+  5a1f386d, 25 subagentes llevan el 57 % y se distinguen uno a uno por su ancho.
+- **Fallo visto y corregido:** la regla CSS global de iconos (`svg { width: 20px }`) encogía el
+  flame a 20 px; el SVG del flame la anula.
+- **Hallazgo (lo que el Flame descubrió, no solo respondió): en las sesiones con muchos
+  subagentes, el hilo principal se lleva casi todo el valor.** Valor a precios de la API, 02-10-2026
+  (0d6a5565 es esta misma sesión, aún en curso: $165,03 en la verificación en Chrome, $166,22 al
+  hacer la tabla):
+
+  | Sesión | Agentes | Valor | Principal (trabajo propio) | 42/39/24 subagentes juntos | Subagente mayor |
+  |---|---|---|---|---|---|
+  | 0d6a5565 | 43 | $166,22 | $149,92 — **90,2 %** | $16,30 — 9,8 % | $0,92 — 0,6 % |
+  | e093c05a | 40 | $372,33 | $357,66 — **96,1 %** | $14,66 — 3,9 % | $1,92 — 0,5 % |
+  | 5a1f386d | 25 | $10,60 | $4,60 — 43,4 % | $6,00 — **56,6 %** | $0,41 — 3,9 % |
+
+  Lanzar 40 subagentes no es lo caro: lo caro es el contexto largo del hilo principal (en
+  0d6a5565, el valor del principal es 49 % lecturas de caché, 35 % escrituras de caché y 15 %
+  salida: el 84 % es mover su contexto, no generar). En
+  5a1f386d (una tarea repartida en 24 subagentes cortos) sí pesan los subagentes. Consecuencia
+  de diseño: en las sesiones grandes el "N more" es el caso normal (11 rectángulos para 43
+  agentes; 6 para 40) → el zoom sube al primer puesto de v2 (plan). Para el GIF, 5a1f386d es la
+  sesión donde el Flame hace lo que promete.
+- **`/code-review` del Flame, 2 hallazgos, corregidos:** (1) la barra de la sesión salía coral
+  (`.fl-d0` pisaba a `.fl-root`, misma especificidad) → neutra; (2) un agente en un ciclo de
+  padres (él mismo, o dos que se apuntan) no se alcanzaba desde la sesión y su valor
+  desaparecía del total sin aviso (la cabecera decía $10, el flame $5). El backend ya se protege
+  de ciclos de un `meta.json` manipulado (`views.subtree`); el layout ahora recorre sin repetir y
+  cuelga de la sesión lo que no alcanza. Test con autociclo y ciclo de dos.

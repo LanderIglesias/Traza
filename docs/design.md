@@ -633,6 +633,30 @@ Definiciones completas y su evidencia en plan.md F6.5 y findings.md "F6.5". Lo e
   vista de juicio siguen el orden del fichero (es el orden en que Claude Code lo escribió).
   Invariante comprobado en disco: ningún desglose supera el tiempo activo de su sesión.
 
+### 7.5 Flame (antes de F7)
+
+Tercera pestaña (Tree | Timeline | Flame; Tree sigue por defecto). La Timeline dice *cuándo*;
+con 40 agentes del mismo tipo las etiquetas no distinguen, el **ancho** sí.
+- **Ancho = valor a precios de la API** del agente más el de sus descendientes; fila 0 la sesión
+  (100 %), fila 1 el principal y los huérfanos (no tienen padre: cuelgan de la sesión), y así
+  hacia abajo. Hijos de mayor a menor. Solo coste, no tiempo. Sin endpoint nuevo: sale del
+  árbol de `/api/sessions/{id}` (coste propio por nodo); el del subárbol se suma en el cliente
+  para que todo cuadre al 100 % por construcción. Sin precio = 0 (nota bajo el gráfico).
+- **Coste propio visible:** el hueco que dejan los hijos bajo un agente es un bloque del mismo
+  color que el agente, desvaído y con borde discontinuo, etiquetado "own work · $X".
+- **Agregados:** hijos de menos de 3 px o más hondos que 8 niveles se juntan en un bloque "N more
+  agents" (N cuenta también sus descendientes). El mínimo es en píxeles: en móvil se agrega más.
+- **Colores por profundidad** (5 tokens que se repiten, claro y oscuro), no por tipo ni estado.
+- **Etiqueta dentro si cabe; si no, tooltip** (`<title>` del SVG). Clic o Enter → vista de juicio
+  del agente; al volver, foco en el mismo bloque.
+- **Móvil:** el mismo flame a todo el ancho (sin lista ni scroll horizontal): la forma sigue
+  diciendo dónde va el valor, y tocar un bloque abre el agente (que lleva su nombre).
+- **Layout = función pura** `flameLayout(tree)` (`static/flame.js`) → `[{x, y, w, h, agent_id,
+  kind}]`; tests en `tests/flame.test.mjs` (`node --test`, lanzados desde pytest).
+- **Límite conocido:** cuando el principal se lleva casi todo (0d6a5565: 90 % es trabajo propio
+  del principal), los subagentes caen bajo 3 px y salen agregados; el flame lo dice tal cual.
+  Ampliar un nodo sería el zoom de v2.
+
 ## 8. Pruebas y evaluación (cómo se demuestra que los datos son correctos)
 
 1. **Test de deduplicación por `requestId`** (exhaustivo): fixture con peticiones multilínea;

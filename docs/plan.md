@@ -175,14 +175,25 @@ El conmutador **Tree | Timeline** son dos pestañas dentro del panel de trabajo.
 **Recortado en la aprobación, a v2:** tendencias de 14 días en las tarjetas, buscador de
 sesiones y filtro 24 h / 7 d / todo.
 
-**Primero de v2 (revisión de F6.5), en este orden y antes que el resto de v2:**
-1. **Marca "skill fork" en las filas de la Timeline.** En el árbol el huérfano lleva su marca y
+**Primero de v2, en este orden y antes que el resto de v2** (revisiones de F6.5 y del Flame):
+1. **Zoom = dos vistas acopladas, en Timeline y en Flame (prioridad alta).** Pulsar un agente (o
+   un "N more") reescala la vista a ese nodo: en la Timeline, a su rango de tiempo con sus
+   turnos como barras separadas (como blazo o Perfetto); en el Flame, a su subárbol al 100 % del
+   ancho. No es un slider. **Por qué sube al primer puesto:** en las sesiones grandes el "N more"
+   es el caso normal, no la excepción — 0d6a5565: 11 rectángulos para 43 agentes; e093c05a: 6
+   para 40 (findings "Flame"). Sin zoom, el Flame en tus sesiones típicas es un bloque grande y
+   un agregado que no se puede abrir; en la Timeline, un subagente de 9 s en 4 h 27 m activas
+   sigue siendo una raya.
+2. **Marca "skill fork" en las filas de la Timeline.** En el árbol el huérfano lleva su marca y
    en la Timeline sale como una fila normal: el usuario lo percibe como un bug.
-2. **Zoom en la Timeline = dos vistas acopladas** (revisión antes de F7: v2 prioritario). Vista
-   de resumen (las barras continuas por agente de F7) y vista de detalle: pulsar un agente
-   reescala la timeline a su rango, con sus turnos como barras separadas (como blazo o
-   Perfetto). No es un slider. Un subagente de 9 s en 4 h 27 m activas sigue siendo una raya.
-3. **Brush para elegir una ventana de tiempo** sobre la vista de resumen; casi gratis tras el 2.
+3. **Brush para elegir una ventana de tiempo** sobre la vista de resumen; casi gratis tras el 1.
+
+**Deudas reconocidas (antes de F7):**
+- **El clic y el Enter del Flame (y de la Timeline) no tienen test automático:** el proyecto no
+  tiene infraestructura de pruebas de navegador. Verificado a mano en Chrome (abre el agente, al
+  volver el foco queda en el mismo bloque). Lo que sí tiene test es el layout (`flameLayout`).
+
+**Hecho antes de F7: pestaña Flame** (design §7.5): ancho = valor a precios de la API, solo coste.
 
 **Hecho antes de F7 (revisión de la Timeline):** filas iguales colapsadas, una barra continua
 por agente segmentada por modelo / herramientas / tú, ancho mínimo de 1,5 px y pausas marcadas

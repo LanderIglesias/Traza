@@ -21,6 +21,7 @@
   --coral-a: #d93a26;
   --coral-b: #b51f4a;        /* blanco sobre ambos extremos ≥ 5:1 */
   --tool-bg: #e7eeff;  --tool: #2349c0;
+  --fl-0: #f4c7bb; --fl-1: #f2dca6; --fl-2: #c8d6f6; --fl-3: #dccbf3; --fl-4: #c3e4d2;
   --think-bg: #eee9ff; --think: #5638c2;
   --idle-bg: #eef0f4;  --idle: #5a6070;
   --err-bg: #fde8e7;   --err: #b42318;
@@ -52,6 +53,7 @@
   --night: #24272f;
   --night-2: #b4b9c6;
   --tool-bg: #1c2a4a;  --tool: #9db8ff;
+  --fl-0: #6a3b33; --fl-1: #5b4a23; --fl-2: #2d416c; --fl-3: #46356a; --fl-4: #2b5340;
   --think-bg: #2a2447; --think: #bfaeff;
   --idle-bg: #252830;  --idle: #a9afbd;
   --err-bg: #3d1b1b;   --err: #ff9a8f;
@@ -74,6 +76,7 @@
     --night: #24272f;
     --night-2: #b4b9c6;
     --tool-bg: #1c2a4a;  --tool: #9db8ff;
+    --fl-0: #6a3b33; --fl-1: #5b4a23; --fl-2: #2d416c; --fl-3: #46356a; --fl-4: #2b5340;
     --think-bg: #2a2447; --think: #bfaeff;
     --idle-bg: #252830;  --idle: #a9afbd;
     --err-bg: #3d1b1b;   --err: #ff9a8f;
@@ -489,6 +492,24 @@ button.trace-bar { cursor: pointer; }
 .k-output { background: var(--coral-a); } .k-input { background: var(--ink-3); } .k-web_search { background: var(--ok); }
 .j-summary { display: flex; flex-direction: column; gap: 12px; }
 .breakdown h4 { margin: 0; font-size: 13px; font-weight: 700; color: var(--ink-2); }
+
+/* Flame: colores por profundidad (no por tipo ni estado); el coste propio, desvaído */
+.flame { display: flex; flex-direction: column; gap: 10px; }
+.flame-legend { margin: 0; font-size: 13px; color: var(--ink-2); }
+.flame-chart { width: 100%; }
+.flame-chart svg { display: block; width: auto; height: auto; stroke: none; }   /* sin la regla global de iconos */
+.fl rect { stroke: var(--card); stroke-width: 1; }
+.fl text { font-size: 12px; font-weight: 600; fill: var(--ink); pointer-events: none; }
+.fl.fl-root rect { fill: var(--sunk); }   /* la sesión, neutra: más específica que .fl-d0 */
+.fl-d0 rect { fill: var(--fl-0); } .fl-d1 rect { fill: var(--fl-1); } .fl-d2 rect { fill: var(--fl-2); }
+.fl-d3 rect { fill: var(--fl-3); } .fl-d4 rect { fill: var(--fl-4); }
+.fl-own rect { fill-opacity: 0.45; stroke-dasharray: 3 2; }
+.fl-own text { font-weight: 500; fill: var(--ink-2); }
+.fl-more rect { fill: var(--sunk); stroke: var(--ink-3); stroke-dasharray: 2 2; }
+.fl-more text { fill: var(--ink-2); font-weight: 500; }
+.fl-agent { cursor: pointer; }
+.fl-agent:hover rect, .fl-agent:focus-visible rect { stroke: var(--focus); stroke-width: 2; }
+.fl-agent:focus { outline: none; }
 
 /* móvil (plan F6.5, punto 2): la Gantt se apila — el nombre arriba, la barra a todo el ancho */
 @media (max-width: 640px) {

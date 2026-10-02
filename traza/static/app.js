@@ -1,6 +1,8 @@
 // traza — pantalla de sesiones (F3). Todo texto que viene de los JSONL se pinta con
 // textContent: nunca se interpreta como HTML (design.md §9).
 
+import { flameLayout } from "./flame.js";
+
 const $ = (id) => document.getElementById(id);
 const SVG_NS = "http://www.w3.org/2000/svg";   // identificador del estándar, no una petición
 const STATE_LABEL = { tool: "Running tool", thinking: "Thinking", idle: "Idle", done: "Done" };
@@ -202,9 +204,11 @@ async function renderPanel() {
   document.querySelector(".tabs").hidden = judging;
   $("tree-wrap").hidden = judging || ui.tab !== "tree";
   $("trace").hidden = judging || ui.tab !== "trace";
+  $("flame").hidden = judging || ui.tab !== "flame";
   $("judge").hidden = !judging;
   if (judging) renderJudge();
   else if (ui.tab === "trace") await renderTrace(s);
+  else if (ui.tab === "flame") renderFlame(s);
   else renderTree(s);
 }
 
@@ -438,6 +442,7 @@ $("j-back").addEventListener("click", () => {
   // de vuelta a donde se entró: una barra de la Timeline o la fila del árbol
   renderPanel().then(() => document.querySelector(ui.tab === "trace"
     ? `.trace-bar[data-agent="${CSS.escape(aid)}"]`
+    : ui.tab === "flame" ? `.fl[data-agent="${CSS.escape(aid)}"]`
     : `.tree tr[data-agent="${CSS.escape(aid)}"] .agent-open`)?.focus());
 });
 $("j-earlier").addEventListener("click", async () => {
@@ -638,7 +643,8 @@ for (const b of document.querySelectorAll(".tabs [role=tab]")) {
   b.addEventListener("click", () => selectTab(b.dataset.tab));
   b.addEventListener("keydown", (e) => {
     if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-    const other = document.querySelector(`.tabs [data-tab="${b.dataset.tab === "tree" ? "trace" : "tree"}"]`);
+    const tabs = [...document.querySelectorAll(".tabs [role=tab]")];
+    const other = tabs[(tabs.indexOf(b) + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
     selectTab(other.dataset.tab); other.focus();
   });
 }
@@ -873,5 +879,70 @@ async function renderTrace(s) {
 let traceResize = null;
 addEventListener("resize", () => {
   clearTimeout(traceResize);
-  traceResize = setTimeout(() => { if (!$("trace").hidden) { traceSig = ""; renderPanel(); } }, 200);
+  traceResize = setTimeout(() => {
+    if (!$("trace").hidden) { traceSig = ""; renderPanel(); }
+    if (!$("flame").hidden) renderPanel();          // el ancho mínimo es en píxeles
+  }, 200);
 });
+
+// --- Flame: ancho = valor a precios de la API (propio + subagentes) ---------------------------------
+// Con 40 agentes del mismo tipo, la Timeline dice "cuándo" pero las etiquetas no distinguen; el
+// ancho sí. El layout es una función pura (flame.js, con tests); aquí solo se dibuja en SVG.
+const FLAME_ROW = 26, FLAME_MIN_PX = 3, FLAME_DEPTH = 8;
+let flameSig = "";
+function svgEl(tag, attrs = {}) {
+  const n = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+}
+function renderFlame(s) {
+  const box = $("flame-chart");
+  const width = box.clientWidth || 600;
+  const sig = `${s.id}|${width}|${JSON.stringify(s.tree.map((n) => [n.id, n.parent, n.cost]))}`;
+  if (sig === flameSig && box.firstChild) return;      // nada cambió: conserva foco y hover
+  flameSig = sig;
+  const t0 = performance.now();
+  const rects = flameLayout(s.tree, { maxDepth: FLAME_DEPTH, minFrac: FLAME_MIN_PX / width });
+  const unpriced = s.tree.filter((n) => n.cost === null || n.unpriced).length;
+  $("flame-note").textContent = unpriced ? ` ${plural(unpriced, "agent")} with requests without a price count only what has one.` : "";
+  if (!rects.length) {
+    box.replaceChildren(el("p", { className: "sub", text: "No request in this session has a known price: nothing to size." }));
+    return;
+  }
+  const byId = new Map(s.tree.map((n) => [n.id, n]));
+  const depthOf = new Map(rects.filter((r) => r.agent_id).map((r) => [r.agent_id, r.y]));
+  const rows = Math.max(...rects.map((r) => r.y)) + 1;
+  const svg = svgEl("svg", { width, height: rows * FLAME_ROW, role: "group", "aria-label": "Agents sized by value at API prices" });
+  const pct = (w) => `${(w * 100).toFixed(w < 0.01 ? 2 : 1)} %`;
+  for (const r of rects) {
+    const n = r.agent_id && byId.get(r.agent_id);
+    const depth = r.kind === "own" ? depthOf.get(r.parent_id) : r.y;   // el coste propio, del color de su agente
+    const label = r.kind === "root" ? `Session · ${money(r.cost)}`
+      : r.kind === "own" ? `own work · ${money(r.cost)}`
+      : r.kind === "more" ? `${plural(r.n, "more agent")} · ${money(r.cost)}`
+      : `${agentName(n)} · ${money(r.cost)}`;
+    const tip = r.kind === "agent"
+      ? `${agentName(n)}${n.description ? ` — ${n.description}` : ""}\n${money(r.cost)} incl. subagents (${pct(r.w)} of the session) · own ${money(r.own)}`
+      : `${label} (${pct(r.w)} of the session)`;
+    const g = svgEl("g", { class: `fl fl-${r.kind} fl-d${(depth ?? 0) % 5}` });
+    const x = r.x * width, w = Math.max(r.w * width - 1, 1), y = r.y * FLAME_ROW;
+    g.append(svgEl("rect", { x, y, width: w, height: FLAME_ROW - 2, rx: 4 }));
+    const title = svgEl("title"); title.textContent = tip; g.append(title);
+    if (label.length * 7 + 12 <= w) {                      // la etiqueta, solo si cabe; si no, tooltip
+      const t = svgEl("text", { x: x + 6, y: y + FLAME_ROW / 2 + 3 }); t.textContent = label; g.append(t);
+    }
+    if (r.kind === "agent") {
+      g.dataset.agent = r.agent_id;
+      g.setAttribute("tabindex", "0");
+      g.setAttribute("role", "button");
+      g.setAttribute("aria-label", tip.replace("\n", ". "));
+      const open = () => openJudge(s.id, r.agent_id);
+      g.addEventListener("click", open);
+      g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+    }
+    svg.append(g);
+  }
+  box.replaceChildren(svg);
+  box.dataset.rects = String(rects.length);
+  box.dataset.renderMs = (performance.now() - t0).toFixed(1);
+}
