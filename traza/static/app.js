@@ -662,10 +662,15 @@ function stackBar(label, rows) {
 
 // Desglose del tiempo activo (plan F6.5): modelo / herramientas / tú
 function timeBar(b) {
-  return stackBar("Where the active time went", [
+  const bar = stackBar("Where the active time went", [
     ["model", "Model", b.model, fmtDur(b.model)],
     ["tool", "Tools", b.tool, fmtDur(b.tool)],
     ["user", "You", b.user, fmtDur(b.user)]]);
+  // heurística, no un hecho (design.md §7.4): dicho donde se ve el número
+  bar.title = "Each gap goes to whoever had the turn. A tool still running counts as tool time however long it takes. " +
+    "Any other gap of 5+ minutes is treated as a pause, including waiting for you: an assumption that you were " +
+    "probably away, not a fact. If you were reading a long plan elsewhere, 'You' will be lower than reality.";
+  return bar;
 }
 
 // Barra de valor (plan F6.5): en qué se va el valor a precios de la API

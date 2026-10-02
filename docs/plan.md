@@ -173,9 +173,12 @@ El conmutador **Tree | Timeline** son dos pestañas dentro del panel de trabajo.
 **Recortado en la aprobación, a v2:** tendencias de 14 días en las tarjetas, buscador de
 sesiones y filtro 24 h / 7 d / todo.
 
-**Visto al probar, a v2:** zoom en la timeline (un subagente de 9 s en una sesión de 4 h 27 m
-activas es una raya de 3 px: correcto a esa escala, poco legible); la marca "skill fork" de los
-huérfanos en las filas de la timeline (en el árbol sí está).
+**Primero de v2 (revisión de F6.5), en este orden y antes que el resto de v2:**
+1. **Marca "skill fork" en las filas de la Timeline.** En el árbol el huérfano lleva su marca y
+   en la Timeline sale como una fila normal: el usuario lo percibe como un bug.
+2. **Zoom en la Timeline.** No es cosmético: un subagente de 9 s en una sesión de 4 h 27 m
+   activas es una raya de 3 px, y los subagentes rápidos son la mayoría (mediana 1,9 min). Sin
+   zoom la Timeline no sirve para lo que existe: juzgar subagentes.
 
 **Decisiones técnicas de la aprobación (escritas antes de programar):**
 1. **Tree | Timeline: dos pestañas dentro del panel de trabajo**, cada una con su propio layout

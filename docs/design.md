@@ -602,8 +602,12 @@ Definiciones completas y su evidencia en plan.md F6.5 y findings.md "F6.5". Lo e
   la cabecera.
 - **Desglose** (`timeline.breakdown`): cada hueco a modelo / herramientas / usuario según el
   evento que lo precede. Una herramienta en marcha cuenta entera sea cual sea su duración; los
-  demás huecos de ≥ 5 min son pausa (también esperar al usuario: tras 2 h con una pregunta
-  abierta, lo probable es que no esté). El "tiempo activo" de un agente es la suma del desglose.
+  demás huecos de ≥ 5 min son pausa, **también esperar al usuario**. Esto último es una
+  **heurística, una suposición sobre el usuario y no un hecho**: tras más de 5 min con una
+  pregunta abierta o una respuesta sin leer, *probablemente no esté*; si estaba revisando un plan
+  largo en otra ventana, ese tiempo sale como pausa y "You" saldrá más bajo de lo real. La
+  interfaz lo dice en el título del desglose. El "tiempo activo" de un agente es la suma del
+  desglose.
 - **Barra de valor**: `request_cost_parts` (la misma fórmula que el valor; `request_cost` es su
   suma), con la política de `?` y "+" de §6.6 y §8.
 - **Barras por turno** (un turno = una petición, §7.3): tramo del modelo desde el evento previo
