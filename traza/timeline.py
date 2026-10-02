@@ -20,15 +20,20 @@ def _secs(ts) -> float | None:
 class ActiveAxis:
     """Reloj → segundos de tiempo activo desde el primer evento. Los huecos ≥ IDLE_S no ocupan
     nada; quedan en `breaks` ({at: posición en el eje, idle_s: lo que duró la pausa}) para
-    marcarlos con una línea sin ancho. Un eje común a todos los agentes de una sesión."""
+    marcarlos con una línea sin ancho. Un eje común a todos los agentes de una sesión.
+    `busy`: tramos (inicio, fin) con una herramienta en marcha: un hueco que cubren es trabajo,
+    no pausa, aunque nadie escriba (un subagente de primer plano de 20 min, un Bash largo)."""
 
-    def __init__(self, timestamps):
+    def __init__(self, timestamps, busy=()):
         self.times = sorted({s for s in map(_secs, timestamps) if s is not None})
+        spans = [(a, b) for a, b in ((_secs(x), _secs(y)) for x, y in busy)
+                 if a is not None and b is not None]
         self.offsets, self.breaks, acc = [], [], 0.0
         for i, t in enumerate(self.times):
             if i:
                 gap = t - self.times[i - 1]
-                if gap >= IDLE_S:
+                prev = self.times[i - 1]
+                if gap >= IDLE_S and not any(a <= prev and b >= t for a, b in spans):
                     self.breaks.append({"at": acc, "idle_s": gap})
                 else:
                     acc += gap
@@ -46,8 +51,8 @@ class ActiveAxis:
         if i < 0:
             return 0.0
         delta = t - self.times[i]
-        if i + 1 < len(self.times) and self.times[i + 1] - self.times[i] >= IDLE_S:
-            delta = 0.0                                  # cae dentro de una pausa
+        if i + 1 < len(self.times) and self.offsets[i + 1] == self.offsets[i]:
+            delta = 0.0                 # cae dentro de una pausa (el hueco se eliminó del eje)
         return self.offsets[i] + delta
 
 
@@ -83,8 +88,11 @@ def breakdown(events: list[dict]) -> dict[str, float]:
         a, b = _secs(prev["ts"]), _secs(nxt["ts"])
         if a is None or b is None or b <= a:     # sin hora, o desordenados: no resta
             continue
-        gap = b - a
-        out["idle" if gap >= IDLE_S else _gap_kind(prev, nxt)] += gap
+        gap, kind = b - a, _gap_kind(prev, nxt)
+        # una herramienta en marcha es trabajo dure lo que dure (en disco, subagentes de primer
+        # plano de hasta 64 min); lo demás, a partir de IDLE_S, es pausa — también esperar al
+        # usuario: tras 2 h con una pregunta abierta, lo probable es que no esté
+        out["idle" if gap >= IDLE_S and kind != "tool" else kind] += gap
     return out
 
 

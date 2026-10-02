@@ -179,3 +179,39 @@ def test_resumen_del_agente_cuadra(conn):
     assert sum(s["value"]["parts"].values()) == pytest.approx(j["agent"]["cost"])
     assert s["tokens"]["output"] == j["agent"]["output"]
     assert s["wall_start"] <= s["wall_end"]
+
+
+# --- revisión de F6.5: una herramienta en marcha no es inactividad -----------------------------
+
+def test_esperar_a_una_herramienta_larga_no_es_inactividad():
+    # el principal espera 20 min a un subagente de primer plano (en disco, hasta 64 min)
+    events = [ev("tool_use", 0, "r1", "Agent"), ev("tool_result", 1200), ev("text", 1205, "r2")]
+    assert timeline.breakdown(events) == {"model": 5, "tool": 1200, "user": 0, "idle": 0}
+
+
+def test_esperar_al_usuario_mucho_rato_si_es_inactividad():
+    # AskUserQuestion durante 2 h: probablemente te fuiste; no es trabajo
+    events = [ev("tool_use", 0, "r1", "AskUserQuestion"), ev("tool_result", 7200)]
+    assert timeline.breakdown(events) == {"model": 0, "tool": 0, "user": 0, "idle": 7200}
+
+
+def test_eje_activo_no_corta_una_herramienta_en_marcha():
+    # 15 min sin eventos, pero una herramienta los cubre entera: es trabajo, no pausa
+    axis = timeline.ActiveAxis([at(0), at(900), at(910)], busy=[(at(0), at(900))])
+    assert axis.total == 910 and axis.breaks == []
+    # sin herramienta que lo cubra, la misma pausa sí se elimina
+    assert timeline.ActiveAxis([at(0), at(900), at(910)]).total == 10
+
+
+def test_tramo_de_herramientas_en_paralelo_llega_al_ultimo_resultado(conn):
+    from traza.views import _bars
+    evs = [{"id": 1, "kind": "prompt", "tool_name": None, "tool_use_id": None, "request_id": None, "ts": at(0), "origin": "human"},
+           {"id": 2, "kind": "tool_use", "tool_name": "Read", "tool_use_id": "a", "request_id": "r", "ts": at(2), "origin": None},
+           {"id": 3, "kind": "tool_use", "tool_name": "Bash", "tool_use_id": "b", "request_id": "r", "ts": at(3), "origin": None},
+           {"id": 4, "kind": "tool_result", "tool_name": None, "tool_use_id": "a", "request_id": None, "ts": at(4), "origin": None},
+           {"id": 5, "kind": "tool_result", "tool_name": None, "tool_use_id": "b", "request_id": None, "ts": at(60), "origin": None}]
+    (bar,) = _bars(evs, timeline.ActiveAxis(e["ts"] for e in evs))
+    assert bar["tool_end"] == 60                     # el Bash largo, no el Read
+    # con el Bash aún en marcha, el tramo sigue abierto hasta el final del eje
+    (bar,) = _bars(evs[:4], timeline.ActiveAxis([at(0), at(2), at(3), at(4), at(30)]))
+    assert bar["tool_end"] == 30

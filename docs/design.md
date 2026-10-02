@@ -592,6 +592,24 @@ sin `requestId` (`<synthetic>`) es un turno propio. Prompts y eventos de sistema
 y tokens por turno) y la que usan las señales de F6. Test: `test_judgement.py::
 test_un_turno_es_exactamente_una_peticion` (con mutación: un turno por evento lo rompe).
 
+### 7.4 Vista de trazas (F6.5)
+
+Definiciones completas y su evidencia en plan.md F6.5 y findings.md "F6.5". Lo esencial:
+- **Eje = tiempo activo**, común a toda la sesión (`timeline.ActiveAxis`): un hueco de ≥ 5 min
+  entre eventos de cualquier agente se elimina del eje (línea sin ancho), **salvo** que lo cubra
+  una herramienta en marcha (llamada → resultado; excepto las que esperan al usuario): esperar
+  20 min a un subagente de primer plano o a un Bash largo es trabajo, no pausa. El reloj va en
+  la cabecera.
+- **Desglose** (`timeline.breakdown`): cada hueco a modelo / herramientas / usuario según el
+  evento que lo precede. Una herramienta en marcha cuenta entera sea cual sea su duración; los
+  demás huecos de ≥ 5 min son pausa (también esperar al usuario: tras 2 h con una pregunta
+  abierta, lo probable es que no esté). El "tiempo activo" de un agente es la suma del desglose.
+- **Barra de valor**: `request_cost_parts` (la misma fórmula que el valor; `request_cost` es su
+  suma), con la política de `?` y "+" de §6.6 y §8.
+- **Barras por turno** (un turno = una petición, §7.3): tramo del modelo desde el evento previo
+  hasta su último bloque; tramo de herramientas hasta el **último** resultado (paralelas) o
+  abierto hasta el final del eje si alguna sigue en marcha.
+
 ## 8. Pruebas y evaluación (cómo se demuestra que los datos son correctos)
 
 1. **Test de deduplicación por `requestId`** (exhaustivo): fixture con peticiones multilínea;

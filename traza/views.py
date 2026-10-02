@@ -570,13 +570,18 @@ def _bars(events: list[dict], axis: tl.ActiveAxis) -> list[dict]:
             if t is None:
                 prev = events[i - 1]["ts"] if i else e["ts"]
                 t = turns[e["request_id"]] = {"event": e["id"], "start": prev, "model_end": e["ts"],
-                                              "tool_start": None, "tool_end": None}
+                                              "tool_start": None, "tool_end": None, "pending": set()}
             t["model_end"] = e["ts"]
             if e["kind"] == "tool_use":
                 owner[e["tool_use_id"]] = t
+                t["pending"].add(e["tool_use_id"])
                 t["tool_start"] = t["tool_start"] or e["ts"]
         elif e["kind"] == "tool_result" and e["tool_use_id"] in owner:
-            owner[e["tool_use_id"]]["tool_end"] = e["ts"]
+            # herramientas en paralelo: el tramo llega al ÚLTIMO resultado, no al primero
+            t = owner[e["tool_use_id"]]
+            t["pending"].discard(e["tool_use_id"])
+            if t["tool_end"] is None or (tl._secs(e["ts"]) or 0) > (tl._secs(t["tool_end"]) or 0):
+                t["tool_end"] = e["ts"]
     out = []
     for t in turns.values():
         start, end = axis.offset(t["start"]), axis.offset(t["model_end"])
@@ -586,10 +591,22 @@ def _bars(events: list[dict], axis: tl.ActiveAxis) -> list[dict]:
                "tool_start": None, "tool_end": None}
         if t["tool_start"]:
             ts0 = axis.offset(t["tool_start"])
-            ts1 = axis.offset(t["tool_end"]) if t["tool_end"] else axis.total   # en curso
+            # alguna aún en marcha: el tramo sigue abierto hasta el final del eje
+            ts1 = axis.total if t["pending"] or not t["tool_end"] else axis.offset(t["tool_end"])
             if ts0 is not None and ts1 is not None:
                 bar["tool_start"], bar["tool_end"] = round(ts0, 1), round(max(ts0, ts1), 1)
         out.append(bar)
+    return out
+
+
+def _busy(by_agent: dict) -> list[tuple]:
+    """Tramos con una herramienta en marcha (salvo las que esperan al usuario): llamada → resultado."""
+    out = []
+    for evs in by_agent.values():
+        start = {e["tool_use_id"]: e["ts"] for e in evs
+                 if e["kind"] == "tool_use" and e["tool_name"] not in sig.WAITS_FOR_USER}
+        out += [(start[e["tool_use_id"]], e["ts"]) for e in evs
+                if e["kind"] == "tool_result" and e["tool_use_id"] in start]
     return out
 
 
@@ -604,7 +621,8 @@ def session_timeline(conn, session_id: str) -> dict | None:
     by_agent = _timeline_events(conn, session_id)
     if not by_agent:
         return None
-    axis = tl.ActiveAxis(e["ts"] for evs in by_agent.values() for e in evs)
+    axis = tl.ActiveAxis((e["ts"] for evs in by_agent.values() for e in evs),
+                         busy=_busy(by_agent))
     breaks = [{"at": round(b["at"], 1), "idle_s": round(b["idle_s"])} for b in axis.breaks]
     return {"axis": {"total": axis.total, "breaks": breaks,
                      "start": _iso_s(axis.start), "end": _iso_s(axis.end)},
@@ -617,6 +635,7 @@ def agent_summary(conn, session_id: str, agent_id: str) -> dict:
     tokens y barra de valor de sus peticiones propias (las de las que es dueño, §6.2)."""
     evs = _timeline_events(conn, session_id, agent_id).get(agent_id, [])
     axis = tl.ActiveAxis(e["ts"] for e in evs)
+    br = tl.breakdown(evs)
     rids = {r for r, in conn.execute("""SELECT request_id FROM request_owner
                                         WHERE owner_session_id = ? AND owner_agent_id = ?""",
                                      (session_id, agent_id))}
@@ -624,8 +643,9 @@ def agent_summary(conn, session_id: str, agent_id: str) -> dict:
     outs = [r.tokens.output for r in reqs]
     reads = [(r.tokens.input, r.tokens.cache_read, r.tokens.cache_write_5m,
               r.tokens.cache_write_1h) for r in reqs]
-    return {"active_s": axis.total, "wall_start": _iso_s(axis.start), "wall_end": _iso_s(axis.end),
-            "breakdown": tl.breakdown(evs),
+    # tiempo activo = la suma del desglose: el resumen y su barra cuadran siempre
+    return {"active_s": br["model"] + br["tool"] + br["user"],
+            "wall_start": _iso_s(axis.start), "wall_end": _iso_s(axis.end), "breakdown": br,
             "models": sorted({r.model for r in reqs if r.model and r.model != "<synthetic>"}),
             "requests": len(reqs),
             # entrada incluida la caché (lo que el modelo leyó); None si alguna no lo sabe

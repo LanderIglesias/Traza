@@ -403,3 +403,12 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
   de valor sale de la misma fórmula); el oráculo (tolerancia 1 µ$) sigue verde.
 - **Mutaciones del desglose:** 7 de 8 fallaron sus tests; la que sobrevivió era código muerto
   (una comprobación de "misma respuesta" tras un texto que nunca cambiaba el resultado), quitado.
+- **`/code-review` de F6.5, 5 hallazgos, todos corregidos:** (1) esperar a una herramienta
+  larga contaba como pausa (≥ 5 min) en el desglose y en el eje — ahora una herramienta en
+  marcha es trabajo dure lo que dure, y el eje común no corta los huecos que cubre (tests; el
+  tiempo activo de 0d6a5565 pasa de 4 h 26 m a 4 h 34 m); (2) con herramientas en paralelo el
+  tramo se cortaba en el primer resultado — ahora llega al último y queda abierto si alguna
+  sigue en marcha (test); (3) la Timeline robaba el foco en cada tick — ahora no se redibuja si
+  nada cambió y devuelve el foco a la misma barra; (4) el botón de tema no hacía nada si el
+  navegador bloquea el almacenamiento — la elección vive también en memoria; (5) "← All agents"
+  perdía el foco al venir de la Timeline. (3)–(5) verificados en Chrome.

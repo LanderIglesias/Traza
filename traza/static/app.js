@@ -204,7 +204,7 @@ async function renderPanel() {
   $("trace").hidden = judging || ui.tab !== "trace";
   $("judge").hidden = !judging;
   if (judging) renderJudge();
-  else if (ui.tab === "trace") renderTrace(s);
+  else if (ui.tab === "trace") await renderTrace(s);
   else renderTree(s);
 }
 
@@ -418,7 +418,10 @@ function openJudge(sid, aid, focusEvent = null) {
 $("j-back").addEventListener("click", () => {
   const aid = ui.judge?.aid;
   ui.judge = null;
-  renderPanel().then(() => document.querySelector(`.tree tr[data-agent="${CSS.escape(aid)}"] .agent-open`)?.focus());
+  // de vuelta a donde se entró: una barra de la Timeline o la fila del árbol
+  renderPanel().then(() => document.querySelector(ui.tab === "trace"
+    ? `.trace-bar[data-agent="${CSS.escape(aid)}"]`
+    : `.tree tr[data-agent="${CSS.escape(aid)}"] .agent-open`)?.focus());
 });
 $("j-earlier").addEventListener("click", async () => {
   const j = ui.judge;
@@ -599,15 +602,15 @@ async function fillContent(scope) {
 const THEME_KEY = "traza-theme";
 const systemDark = matchMedia("(prefers-color-scheme: dark)");
 function storedTheme() { try { return localStorage.getItem(THEME_KEY); } catch { return null; } }
+let themeChoice = storedTheme();         // en memoria: vale aunque no se pueda guardar
 function applyTheme() {
-  const t = storedTheme() || (systemDark.matches ? "dark" : "light");
+  const t = themeChoice || (systemDark.matches ? "dark" : "light");
   document.documentElement.dataset.theme = t;
   $("theme").setAttribute("aria-label", t === "dark" ? "Switch to light theme" : "Switch to dark theme");
 }
 $("theme").addEventListener("click", () => {
-  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-  try { localStorage.setItem(THEME_KEY, next); } catch { /* sin almacenamiento: solo esta visita */ }
-  document.documentElement.dataset.theme = next;
+  themeChoice = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  try { localStorage.setItem(THEME_KEY, themeChoice); } catch { /* sin almacenamiento: solo esta visita */ }
   applyTheme();
 });
 systemDark.addEventListener("change", applyTheme);
@@ -711,13 +714,18 @@ function treeRows(s) {
   return out;
 }
 
-let traceSeq = 0;
+let traceSeq = 0, traceSig = "";
 async function renderTrace(s) {
   const seq = ++traceSeq;
   const r = await fetch(`/api/sessions/${encodeURIComponent(s.id)}/timeline`);
   if (seq !== traceSeq || !r.ok) return;
   const t = await r.json();
   if (seq !== traceSeq) return;
+  const sig = `${s.id}|${JSON.stringify(t)}`;
+  if (sig === traceSig) return;            // nada cambió: conserva foco, hover y tooltips
+  traceSig = sig;
+  const focused = document.activeElement?.closest?.(".trace-bar");
+  const keep = focused && [focused.dataset.agent, focused.dataset.event];
   const ax = t.axis, total = ax.total || 1;
   const pct = (x) => `${Math.max(0, Math.min(100, (x / total) * 100))}%`;
   const idle = ax.breaks.reduce((a, b) => a + b.idle_s, 0);
@@ -740,7 +748,7 @@ async function renderTrace(s) {
     label.style.setProperty("--depth", depth);
     const bars = a.bars.map((b) => {
       const end = Math.max(b.model_end, b.tool_end ?? 0);
-      const btn = el("button", { type: "button", className: "trace-bar",
+      const btn = el("button", { type: "button", className: "trace-bar", "data-agent": n.id, "data-event": String(b.event),
         "aria-label": `${name}: turn at ${fmtDur(b.start)}, model ${fmtDur(b.model_end - b.start)}` +
           (b.tool_start != null ? `, tools ${fmtDur(b.tool_end - b.tool_start)}` : "") });
       btn.style.left = pct(b.start);
@@ -768,4 +776,5 @@ async function renderTrace(s) {
   });
   $("trace-chart").replaceChildren(...rows,
     el("div", { className: "trace-axis" }, el("span", { text: "Active time →" }), el("div", { className: "trace-ticks" }, ...ticks)));
+  if (keep) $("trace-chart").querySelector(`.trace-bar[data-agent="${CSS.escape(keep[0])}"][data-event="${keep[1]}"]`)?.focus();
 }
