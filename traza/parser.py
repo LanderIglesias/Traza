@@ -148,6 +148,9 @@ def parse_line(line: str) -> Parsed:
         return Parsed(events=[Event("unknown", 0, None, None)])
 
 
+MAX_COST = 1e9  # $/proceso: por encima no es una medida (y dos 1e308 suman inf)
+
+
 def _parse(d) -> Parsed:
     if not isinstance(d, dict):
         raise TypeError("la línea no es un objeto")
@@ -156,9 +159,10 @@ def _parse(d) -> Parsed:
         mu, start = d.get("modelUsage"), _int(d.get("startTime"))
         if not isinstance(mu, dict) or start is None:
             return Parsed(ignored="cost-state")       # forma rara: no se inventa una medida
+        # NaN, Infinity, negativo o absurdo (json.loads los acepta) no son una medida: fuera
         costs = {m: float(v["costUSD"]) for m, v in mu.items()
                  if isinstance(m, str) and isinstance(v, dict)
-                 and type(v.get("costUSD")) in (int, float)}
+                 and type(v.get("costUSD")) in (int, float) and 0 <= v["costUSD"] < MAX_COST}
         if mu and not costs:   # trae modelos pero ninguno con costUSD: el formato cambió
             return Parsed(events=[Event("unknown", 0, uuid, ts)])
         return Parsed(cost_state=(start, costs))

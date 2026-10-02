@@ -172,7 +172,7 @@ async function renderPanel() {
     return;
   }
   const wanted = ui.selected;
-  const r = await fetch(`/api/sessions/${encodeURIComponent(wanted)}`);
+  const r = await api(`/api/sessions/${encodeURIComponent(wanted)}`);
   if (seq !== panelSeq) return;   // llegó una petición más nueva: no pintar datos viejos
   if (r.status === 404) {          // la sesión desapareció del disco (limpieza de 30 días)
     ui.selected = null;
@@ -322,8 +322,10 @@ function setFilter(f) {
 let pending = null;
 async function refresh() {
   const seq = ++refreshSeq;
-  const r = await fetch("/api/overview");
+  const r = await api("/api/overview");
   const data = await r.json();
+  if (live.run && data.run !== live.run) return stopped();   // otro servidor en el puerto
+  live.run = data.run;
   if (seq !== refreshSeq) return ui.data;   // una más nueva ya pintó (o pintará)
   ui.data = data;
   renderCards(ui.data);
@@ -342,8 +344,19 @@ function refreshSoon() {                     // varios ticks seguidos → una so
 //   lost          "Disconnected"  > LOST_AFTER_MS sin conexión; sigue reintentando
 const SILENT_MS = 40000;        // el servidor late cada 15 s: 40 s sin nada = conexión muerta
 const LOST_AFTER_MS = 10000;
-const CONN_TEXT = { open: "Watching", reconnecting: "Reconnecting…", lost: "Disconnected · data may be stale" };
-const live = { es: null, gen: null, lastSeen: 0, downSince: 0 };
+const CONN_TEXT = { open: "Watching", reconnecting: "Reconnecting…", lost: "Disconnected · data may be stale",
+                    stopped: "traza stopped · reload the page" };
+const live = { es: null, gen: null, run: null, stopped: false, lastSeen: 0, downSince: 0 };
+
+// Cada arranque de traza tiene su `run`. Si al reconectar responde otro (traza reiniciado u
+// otro programa en el puerto), la pestaña se para en vez de pintar sus datos (auditoría F7).
+function stopped() {
+  live.stopped = true;
+  live.es?.close();
+  setConn("stopped");
+  return ui.data;
+}
+const api = (url) => live.stopped ? Promise.reject(new Error("traza stopped")) : fetch(url);
 
 function setConn(state) {
   $("conn").dataset.state = state;
@@ -354,11 +367,15 @@ function connect(gen) {
   live.es?.close();
   const es = (live.es = new EventSource(`/events?gen=${encodeURIComponent(gen)}`));
   const alive = () => { live.lastSeen = Date.now(); live.downSince = 0; setConn("open"); };
-  es.addEventListener("hello", () => { alive(); refreshSoon(); });   // tras reconectar: pudo cambiar algo
+  es.addEventListener("hello", (e) => {
+    if (JSON.parse(e.data).run !== live.run) return stopped();
+    alive(); refreshSoon();                                          // tras reconectar: pudo cambiar algo
+  });
   es.addEventListener("tick", () => { alive(); refreshSoon(); });
   es.addEventListener("ping", alive);
-  es.addEventListener("reload", () => location.reload());          // la caché se reconstruyó
+  es.addEventListener("reload", stopped);      // otra generación = otro arranque: no obedecer
   es.onerror = () => {
+    if (live.stopped) return;
     live.downSince ||= Date.now();
     // cada reintento fallido vuelve a llamar aquí: no bajar de "lost" a "reconnecting" (parpadeo)
     if (Date.now() - live.downSince <= LOST_AFTER_MS) setConn("reconnecting");
@@ -366,7 +383,7 @@ function connect(gen) {
   };
 }
 setInterval(() => {                                    // vigilante
-  if (!live.es) return;
+  if (!live.es || live.stopped) return;
   const now = Date.now();
   if ($("conn").dataset.state === "open" && now - live.lastSeen > SILENT_MS) {
     live.downSince = now;                              // conexión zombi (p. ej. tras suspender)
@@ -425,7 +442,7 @@ $("j-back").addEventListener("click", () => {
 });
 $("j-earlier").addEventListener("click", async () => {
   const j = ui.judge;
-  const r = await fetch(`/api/sessions/${encodeURIComponent(j.sid)}/agents/${encodeURIComponent(j.aid)}?before=${j.data.start}`);
+  const r = await api(`/api/sessions/${encodeURIComponent(j.sid)}/agents/${encodeURIComponent(j.aid)}?before=${j.data.start}`);
   if (!r.ok || ui.judge !== j) return;
   j.from = (await r.json()).start;        // desde ahí, cada refresco trae hasta el final
   j.sig = "";
@@ -435,7 +452,7 @@ $("j-earlier").addEventListener("click", async () => {
 async function renderJudge() {
   const j = ui.judge, seq = ++judgeSeq;
   const q = j.from !== null ? `?start_at=${j.from}` : "";
-  const r = await fetch(`/api/sessions/${encodeURIComponent(j.sid)}/agents/${encodeURIComponent(j.aid)}${q}`);
+  const r = await api(`/api/sessions/${encodeURIComponent(j.sid)}/agents/${encodeURIComponent(j.aid)}${q}`);
   if (seq !== judgeSeq || ui.judge !== j) return;
   if (r.status === 404) { ui.judge = null; return renderPanel(); }
   if (!r.ok) return;
@@ -585,7 +602,7 @@ async function fillContent(scope) {
   const targets = [...scope.querySelectorAll("[data-content]")].filter((n) => !n.closest("details:not([open])"));
   const missing = [...new Set(targets.map((n) => Number(n.dataset.content)).filter((id) => !contentCache.has(id)))];
   for (let i = 0; i < missing.length; i += 200) {
-    const r = await fetch(`/api/content?ids=${missing.slice(i, i + 200).join(",")}`);
+    const r = await api(`/api/content?ids=${missing.slice(i, i + 200).join(",")}`);
     if (!r.ok) return;
     for (const [id, c] of Object.entries(await r.json())) contentCache.set(Number(id), c);
   }
@@ -705,7 +722,9 @@ function renderSummary(sm) {
     valueBar(sm.value));
 }
 
-// Filas de la timeline en el orden del árbol, todo desplegado
+// Filas de la timeline en el orden del árbol. Hermanos con el mismo nombre (30 "general-purpose")
+// van en UNA fila "×30" que se despliega: 30 etiquetas iguales eran ruido (revisión antes de F7).
+const traceOpen = new Set();
 function treeRows(s) {
   const kids = new Map();
   for (const n of s.tree) {
@@ -714,15 +733,52 @@ function treeRows(s) {
     kids.get(p).push(n);
   }
   const out = [];
-  const walk = (parent, depth) => { for (const n of kids.get(parent) || []) { out.push([n, depth]); walk(n.id, depth + 1); } };
+  const walk = (parent, depth) => {
+    const groups = new Map();
+    for (const n of kids.get(parent) || []) {
+      if (!groups.has(agentName(n))) groups.set(agentName(n), []);
+      groups.get(agentName(n)).push(n);
+    }
+    for (const [name, members] of groups) {
+      if (members.length === 1) { out.push({ n: members[0], depth }); walk(members[0].id, depth + 1); continue; }
+      const key = `${parent}|${name}`;
+      out.push({ group: { key, name, members, open: traceOpen.has(key) }, depth });
+      if (traceOpen.has(key)) for (const m of members) { out.push({ n: m, depth: depth + 1, member: true }); walk(m.id, depth + 2); }
+    }
+  };
   walk("(root)", 0); walk("(orphan)", 0);
+  return out;
+}
+
+// Una barra continua por agente. Los tramos de menos de MIN_PX se acumulan en una cubeta pintada
+// del tipo con más tiempo dentro: 2.000 turnos de segundos en 5 h eran un peine de rayas de 1 px.
+const MIN_PX = 1.5;
+function binSegments(segs, pxPerS) {
+  const minS = MIN_PX / pxPerS, out = [];
+  let bin = null;
+  const flush = () => {
+    if (!bin) return;
+    const kind = Object.entries(bin.t).sort((x, y) => y[1] - x[1])[0][0];
+    const last = out[out.length - 1];
+    if (last && last.kind === kind && bin.start - last.end < minS) last.end = Math.max(last.end, bin.end);
+    else out.push({ start: bin.start, end: bin.end, kind, event: bin.event });
+    bin = null;
+  };
+  for (const [st, en, kind, event] of [...segs].sort((x, y) => x[0] - y[0])) {
+    if (bin && st - bin.end >= minS) flush();          // hueco visible: la cubeta no lo cruza
+    bin ||= { start: st, end: st, t: {}, event };
+    bin.end = Math.max(bin.end, en);
+    bin.t[kind] = (bin.t[kind] || 0) + (en - st);
+    if (bin.end - bin.start >= minS) flush();
+  }
+  flush();
   return out;
 }
 
 let traceSeq = 0, traceSig = "";
 async function renderTrace(s) {
   const seq = ++traceSeq;
-  const r = await fetch(`/api/sessions/${encodeURIComponent(s.id)}/timeline`);
+  const r = await api(`/api/sessions/${encodeURIComponent(s.id)}/timeline`);
   if (seq !== traceSeq || !r.ok) return;
   const t = await r.json();
   if (seq !== traceSeq) return;
@@ -730,7 +786,7 @@ async function renderTrace(s) {
   if (sig === traceSig) return;            // nada cambió: conserva foco, hover y tooltips
   traceSig = sig;
   const focused = document.activeElement?.closest?.(".trace-bar");
-  const keep = focused && [focused.dataset.agent, focused.dataset.event];
+  const keep = focused && [focused.dataset.agent];
   const ax = t.axis, total = ax.total || 1;
   const pct = (x) => `${Math.max(0, Math.min(100, (x / total) * 100))}%`;
   const idle = ax.breaks.reduce((a, b) => a + b.idle_s, 0);
@@ -746,32 +802,29 @@ async function renderTrace(s) {
     d.style.left = pct(b.at);
     return d;
   });
-  const rows = treeRows(s).map(([n, depth]) => {
-    const a = t.agents[n.id] || { bars: [] };
-    const name = n.id === "main" ? "Main agent" : n.type || `Agent ${n.id.slice(0, 7)}`;
-    const label = el("div", { className: "trace-label", text: name, title: n.description || name });
+  const KIND = { model: "model", tool: "tools", user: "you" };
+  const fills = [];                       // [pista, tramos, agente | null, texto] — se pintan al medir
+  const rows = treeRows(s).map(({ n, group, depth, member }) => {
+    const track = el("div", { className: "trace-track" });
+    let label;
+    if (group) {
+      label = el("button", { type: "button", className: "trace-label trace-group", "aria-expanded": String(group.open),
+        text: `${group.name} ×${group.members.length}` });
+      label.dataset.key = group.key;
+      label.addEventListener("click", () => {
+        traceOpen[group.open ? "delete" : "add"](group.key);
+        traceSig = "";
+        renderTrace(s).then(() => $("trace-chart").querySelector(`.trace-group[data-key="${CSS.escape(group.key)}"]`)?.focus());
+      });
+      fills.push([track, group.members.flatMap((m) => t.agents[m.id]?.segments || []), null, group.name]);
+    } else {
+      const name = agentName(n);
+      const text = member && n.description ? n.description : name;   // desplegado: 30 nombres iguales no dicen nada
+      label = el("div", { className: "trace-label", text, title: n.description || name });
+      fills.push([track, t.agents[n.id]?.segments || [], n.id, text]);
+    }
     label.style.setProperty("--depth", depth);
-    const bars = a.bars.map((b) => {
-      const end = Math.max(b.model_end, b.tool_end ?? 0);
-      const btn = el("button", { type: "button", className: "trace-bar", "data-agent": n.id, "data-event": String(b.event),
-        "aria-label": `${name}: turn at ${fmtDur(b.start)}, model ${fmtDur(b.model_end - b.start)}` +
-          (b.tool_start != null ? `, tools ${fmtDur(b.tool_end - b.tool_start)}` : "") });
-      btn.style.left = pct(b.start);
-      btn.style.width = pct(end - b.start);
-      const w = end - b.start || 1;
-      const seg = (cls, from, to) => {
-        const sp = el("span", { className: `seg ${cls}` });
-        sp.style.left = `${((from - b.start) / w) * 100}%`;
-        sp.style.width = `${((to - from) / w) * 100}%`;
-        return sp;
-      };
-      btn.append(seg("seg-model", b.start, b.model_end));
-      if (b.tool_start != null) btn.append(seg("seg-tool", b.tool_start, b.tool_end));
-      btn.addEventListener("click", () => openJudge(s.id, n.id, b.event));
-      return btn;
-    });
-    return el("div", { className: "trace-row" }, label,
-      el("div", { className: "trace-track" }, ...breakTpl.map((d) => d.cloneNode()), ...bars));
+    return el("div", { className: "trace-row" }, label, track);
   });
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => {
     const sp = el("span", { text: fmtDur(ax.total * f) });
@@ -780,6 +833,45 @@ async function renderTrace(s) {
     return sp;
   });
   $("trace-chart").replaceChildren(...rows,
-    el("div", { className: "trace-axis" }, el("span", { text: "Active time →" }), el("div", { className: "trace-ticks" }, ...ticks)));
-  if (keep) $("trace-chart").querySelector(`.trace-bar[data-agent="${CSS.escape(keep[0])}"][data-event="${keep[1]}"]`)?.focus();
+    el("div", { className: "trace-axis" }, el("span", { text: "Active time →" }), el("div", { className: "trace-ticks" }, ...breakTpl, ...ticks)));
+  // tras montar: el ancho real de la pista decide qué es sub-píxel
+  const pxPerS = (fills[0]?.[0].clientWidth || 600) / total;
+  for (const [track, segs, agent, text] of fills) {
+    if (!segs.length) continue;
+    const bins = binSegments(segs, pxPerS);
+    const b0 = bins[0].start, span = Math.max(bins[bins.length - 1].end - b0, 1e-9);
+    const sum = { model: 0, tool: 0, user: 0 };
+    for (const [st, en, k] of segs) sum[k] += en - st;
+    const desc = Object.entries(sum).filter(([, v]) => v).map(([k, v]) => `${KIND[k]} ${fmtDur(v)}`).join(", ");
+    const bar = el(agent ? "button" : "div", { className: "trace-bar" });
+    if (agent) {
+      bar.type = "button";
+      bar.dataset.agent = agent;
+      bar.setAttribute("aria-label", `${text}: ${desc}. Opens the turn under the pointer`);
+      // un botón por agente; el clic abre el turno bajo el puntero (con teclado: el primero)
+      bar.addEventListener("click", (e) => {
+        const r = bar.getBoundingClientRect();
+        const at = b0 + (Math.max(0, e.clientX - r.left) / r.width) * span;
+        const hit = bins.find((x) => x.end >= at) || bins[bins.length - 1];
+        openJudge(s.id, agent, hit.event);
+      });
+    } else bar.title = desc;
+    bar.style.left = pct(b0);
+    bar.style.width = pct(span);
+    for (const x of bins) {
+      const sp = el("span", { className: `seg seg-${x.kind}` });
+      sp.style.left = `${((x.start - b0) / span) * 100}%`;
+      sp.style.width = `${((x.end - x.start) / span) * 100}%`;
+      bar.append(sp);
+    }
+    track.append(bar);
+  }
+  if (keep) $("trace-chart").querySelector(`.trace-bar[data-agent="${CSS.escape(keep[0])}"]`)?.focus();
 }
+
+// el ancho de la pista decide qué tramos son sub-píxel: al cambiar el tamaño, se vuelven a agrupar
+let traceResize = null;
+addEventListener("resize", () => {
+  clearTimeout(traceResize);
+  traceResize = setTimeout(() => { if (!$("trace").hidden) { traceSig = ""; renderPanel(); } }, 200);
+});

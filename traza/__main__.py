@@ -32,14 +32,19 @@ def main(argv=None) -> int:
     sub.add_parser("report", help="tokens and estimated cost of one session file")
     args = ap.parse_args(argv)
 
-    # Puerto ocupado: error claro, y no abrir el navegador contra otro programa.
-    with socket.socket() as probe:
-        try:
-            probe.bind(("127.0.0.1", args.port))
-        except OSError:
-            print(f"port {args.port} is in use; try: traza serve --port {args.port + 1}",
-                  file=sys.stderr)
-            return 1
+    # Puerto ocupado: error claro, y no abrir el navegador contra otro programa. El socket
+    # comprobado es el que sirve: soltarlo dejaba una ventana para que otro proceso lo ocupara
+    # antes que uvicorn (auditoría F7). En Windows, SO_REUSEADDR permitiría robarlo: exclusivo.
+    sock = socket.socket()
+    exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+    sock.setsockopt(socket.SOL_SOCKET, exclusive or socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind(("127.0.0.1", args.port))
+    except OSError:
+        sock.close()
+        print(f"port {args.port} is in use; try: traza serve --port {args.port + 1}",
+              file=sys.stderr)
+        return 1
 
     from .server import create_app, make_server
 
@@ -47,7 +52,7 @@ def main(argv=None) -> int:
     print(f"traza on {url}  (cache: {args.db}, reading: {args.root})")
     if not args.no_open:
         threading.Thread(target=_open_when_ready, args=(url,), daemon=True).start()
-    make_server(create_app(args.db, args.root, port=args.port), args.port).run()
+    make_server(create_app(args.db, args.root, port=args.port), args.port).run(sockets=[sock])
     return 0
 
 

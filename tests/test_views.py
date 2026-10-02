@@ -442,3 +442,23 @@ def test_coste_interno_solo_cuando_es_medible(conn, tmp_path):
     assert h["internal_cost"] == {"sessions": 1, "cost": pytest.approx(0.02),
                                   "measured": pytest.approx(0.52),
                                   "share": pytest.approx(0.02 / 0.52)}
+
+
+def test_herramienta_sin_resultado_y_prompt_horas_despues(tmp_path):
+    # revisión antes de F7: "el siguiente evento marca el fin" no puede convertir una herramienta
+    # interrumpida en horas de trabajo (desglose y resumen) ni dejar el agente "en herramienta"
+    # o colgado (estado y señal exigen que no haya prompt posterior)
+    def interrupted(proj):
+        f = proj / "sess-A.jsonl"
+        f.write_text("".join(f.read_text(encoding="utf-8").splitlines(keepends=True)[:19]),
+                     encoding="utf-8")                       # main acaba en su Agent sin resultado
+        _append(f, {"type": "user", "uuid": "u9", "timestamp": "2026-01-01T14:00:14.000Z",
+                    "sessionId": "sess-A", "message": {"role": "user", "content": "sigue"}})
+    c = _copy(tmp_path, interrupted)
+    main = _nodes(c)["main"]
+    assert main["state"] != "tool" and "hung" not in main["signals"]
+    s = views.agent_view(c, "sess-A", "main")["summary"]
+    assert s["breakdown"]["tool"] < 60 and s["active_s"] < 60     # antes: 4 h de "herramienta"
+    t = views.session_timeline(c, "sess-A")
+    assert t["axis"]["total"] < 60
+    assert sum(e - s for s, e, k, _ in t["agents"]["main"]["segments"] if k == "tool") < 60

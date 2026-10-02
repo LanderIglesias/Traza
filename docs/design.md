@@ -599,9 +599,13 @@ Definiciones completas y su evidencia en plan.md F6.5 y findings.md "F6.5". Lo e
   entre eventos de cualquier agente se elimina del eje (línea sin ancho), **salvo** que lo cubra
   una herramienta en marcha (llamada → resultado; excepto las que esperan al usuario): esperar
   20 min a un subagente de primer plano o a un Bash largo es trabajo, no pausa. El reloj va en
-  la cabecera.
+  la cabecera. Las pausas se marcan una vez, sobre el eje (en cada fila volvían a parecer un
+  código de barras).
 - **Desglose** (`timeline.breakdown`): cada hueco a modelo / herramientas / usuario según el
-  evento que lo precede. Una herramienta en marcha cuenta entera sea cual sea su duración; los
+  evento que lo precede, contado desde el instante más tardío ya visto (el orden del fichero no
+  siempre es cronológico). "En marcha" = llamada con su resultado (`timeline.running`, la misma
+  regla que el eje): una llamada sin resultado no cuenta horas. Una herramienta en marcha cuenta
+  entera sea cual sea su duración; los
   demás huecos de ≥ 5 min son pausa, **también esperar al usuario**. Esto último es una
   **heurística, una suposición sobre el usuario y no un hecho**: tras más de 5 min con una
   pregunta abierta o una respuesta sin leer, *probablemente no esté*; si estaba revisando un plan
@@ -610,9 +614,24 @@ Definiciones completas y su evidencia en plan.md F6.5 y findings.md "F6.5". Lo e
   desglose.
 - **Barra de valor**: `request_cost_parts` (la misma fórmula que el valor; `request_cost` es su
   suma), con la política de `?` y "+" de §6.6 y §8.
-- **Barras por turno** (un turno = una petición, §7.3): tramo del modelo desde el evento previo
-  hasta su último bloque; tramo de herramientas hasta el **último** resultado (paralelas) o
-  abierto hasta el final del eje si alguna sigue en marcha.
+- **Una barra continua por agente** (`timeline.segments`, revisión antes de F7): de su primera a
+  su última actividad, coloreada por quién tenía el turno con la misma regla que el desglose
+  (suman exactamente lo mismo). Sustituye a las barras por turno: en una sesión de 5 h, turnos
+  de segundos eran rayas sub-píxel (2.035 en el principal). Una herramienta en marcha ahora (de la
+  última respuesta, sin resultado y sin prompt posterior, §7.1) sigue abierta hasta el final del
+  eje; una abandonada antes no se alarga. En el cliente, los tramos de < 1,5 px se acumulan en
+  una cubeta del color con más tiempo dentro (fundir solo con el vecino del mismo color no basta
+  cuando los tramos diminutos alternan). Un botón por agente: el clic abre el turno bajo el
+  puntero; con teclado, el primero.
+- **Filas iguales colapsadas:** hermanos con el mismo nombre (30 "general-purpose") van en una
+  fila "×30" que se despliega; desplegados, cada uno se etiqueta por su descripción.
+- **Timestamps no monótonos (el JSONL no los garantiza, como tampoco un `stop_reason`):** el
+  orden del fichero no siempre es cronológico (escrituras en paralelo; un resultado unos ms
+  antes que su llamada). Qué hace cada parte: el **eje** ordena los instantes (no depende del
+  orden); el **desglose** y la **barra continua** cuentan cada hueco desde el instante más
+  tardío ya visto, así que un evento que retrocede no suma ni resta tiempo; las **señales** y la
+  vista de juicio siguen el orden del fichero (es el orden en que Claude Code lo escribió).
+  Invariante comprobado en disco: ningún desglose supera el tiempo activo de su sesión.
 
 ## 8. Pruebas y evaluación (cómo se demuestra que los datos son correctos)
 
@@ -672,7 +691,18 @@ queda ninguna, el test se salta con ese motivo. Las copias (sesiones que compart
   solo puede leer el autor (`~/.claude` es de su usuario). En un portátil personal de un solo
   usuario no cruza ninguna frontera; en una máquina compartida sí. Mitigación preparada si hace
   falta: token aleatorio por arranque en la URL que abre `traza serve` (cookie `HttpOnly` +
-  `SameSite=Strict` tras el primer acceso). Decisión del autor, no aplicada en v1.
+  `SameSite=Strict` tras el primer acceso). Decisión del autor, no aplicada en v1. Ojo: la
+  auditoría F7 vio que una cookie no distingue puertos; el token solo protege si va con lo de abajo.
+- **Puerto reservado una sola vez (auditoría F7):** `traza serve` comprueba el puerto con el
+  mismo socket que luego sirve (se pasa a uvicorn; `SO_EXCLUSIVEADDRUSE` en Windows). Antes lo
+  soltaba y uvicorn lo volvía a ocupar tras validar la caché: en ese hueco otro proceso podía
+  quedárselo y el navegador se abría contra él.
+- **Pendiente de validar con varias cuentas (limitación conocida):** si otra cuenta del equipo
+  ocupa el puerto con traza parado y sirve una página que registra un *service worker* en
+  `127.0.0.1:7420`, ¿sigue interceptando cuando vuelve el traza real (que responde 404 a su
+  script)? Depende del navegador y no se puede probar aquí (una sola cuenta, sin sandbox).
+  Riesgo bajo (equipo compartido; panel de solo lectura sin secretos). Plan de prueba en el
+  informe de la auditoría (`NEEDS-VALIDATION.md`).
 - Revisado en F3 y cubierto por test: DNS rebinding (Host ajeno → 400), lectura cross-origin
   (sin CORS; `Origin` ajeno o `null` → 403, también en SSE), JSON leído como script (`nosniff`),
   XSS (solo `textContent` + CSP `script-src 'self'` sin inline), sin CSRF (todo es GET de solo
@@ -686,8 +716,12 @@ queda ninguna, el test se salta con ese motivo. Las copias (sesiones que compart
 ## 10. SSE
 
 - Cada evento lleva `id:` (el `events.id`) y la `cache_generation`; el cliente se conecta a
-  `/events?gen=…`. Si la generación no coincide (la BD se reconstruyó), el cliente recarga en vez
-  de reanudar desde `Last-Event-ID`.
+  `/events?gen=…`. Si la generación no coincide, el servidor responde `reload`.
+- **Identificador por arranque (`run`, auditoría F7):** cada `traza serve` genera uno aleatorio
+  que va en `/api/overview` y en `hello`. La pestaña guarda el primero; si al reconectar llega
+  otro `run`, un `reload` (la generación solo cambia al arrancar otro servidor) o una respuesta
+  sin `run`, se para: estado `stopped` "traza stopped · reload the page", sin más peticiones.
+  Antes recargaba sola y pintaba lo que respondiera en el puerto (otro traza u otro programa).
 - Latido cada 15 s (evento `ping`, ver abajo).
 - Cola por cliente con tamaño máximo; si se llena, se descarta lo más viejo; nunca se bloquea
   al watcher.
@@ -702,9 +736,11 @@ queda ninguna, el test se salta con ese motivo. Las copias (sesiones que compart
   | `open` "Watching" | llegó `hello`, `tick` o `ping` hace < 40 s | punto verde |
   | `reconnecting` "Reconnecting…" | error de red, o 40 s sin ningún evento; el navegador reintenta | punto ámbar |
   | `lost` "Disconnected · data may be stale" | > 10 s sin conexión; sigue reintentando, sin volver a ámbar | punto rojo |
+  | `stopped` "traza stopped · reload the page" | respondió otro arranque u otro programa en el puerto | punto rojo, sin reintentos |
 
   Medido: servidor parado → ámbar en ~3 s → rojo 10 s después, sin parpadeo; servidor de vuelta →
-  verde en ~2,5 s y sin recargar la página (misma generación). Tras reconectar se refrescan los
+  verde en ~2,5 s y sin recargar la página (mismo servidor). Un `traza serve` nuevo → `stopped`
+  (probado en Chrome en F7: parar, arrancar otro, la pestaña vieja se para; F5 → "Watching"). Tras reconectar se refrescan los
   datos (`hello` → refresco), porque pudo cambiar algo mientras tanto.
 
 ## 11. Riesgos

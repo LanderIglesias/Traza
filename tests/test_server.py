@@ -126,6 +126,47 @@ def test_serve_con_el_puerto_ocupado_no_abre_nada(capsys):
     assert "in use" in capsys.readouterr().err
 
 
+def test_serve_reserva_el_puerto_antes_de_arrancar(monkeypatch):
+    # Antes se comprobaba el puerto y se soltaba: entre esa prueba y el bind de uvicorn (tras
+    # validar la caché) otro proceso podía ocuparlo y el navegador se abría contra él
+    # (auditoría F7). Ahora el socket que sirve es el mismo que se comprobó.
+    import socket
+    from traza import __main__ as cli
+    seen = {}
+
+    class FakeServer:
+        def run(self, sockets=None):
+            (sock,) = sockets
+            seen["port"] = sock.getsockname()[1]
+            with socket.socket() as other, pytest.raises(OSError):
+                other.bind(("127.0.0.1", seen["port"]))      # nadie más puede ocuparlo
+
+    monkeypatch.setattr(server, "make_server", lambda app, port: FakeServer())
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    assert cli.main(["serve", "--no-open", "--port", str(port)]) == 0
+    assert seen["port"] == port
+
+
+def test_cada_arranque_tiene_su_identificador(tmp_path):
+    # Una pestaña que sobrevive a traza no debe obedecer al siguiente servidor del puerto (otro
+    # traza u otro programa): compara este identificador y se para si cambia (auditoría F7).
+    import json
+    runs = []
+    for _ in range(2):
+        app = server.create_app(tmp_path / "t.db", tmp_path, port=PORT)
+        with TestClient(app, base_url=BASE) as c:
+            runs.append(c.get("/api/overview").json()["run"])
+    assert all(runs) and runs[0] != runs[1]
+
+    async def first_event():
+        hub = server.Hub()
+        stream = server.sse_stream(hub, None, "g1", 1, lambda: asyncio.sleep(0, False), run="r1")
+        return await asyncio.wait_for(anext(stream), 1)
+    assert json.loads(asyncio.run(first_event()).split("data: ", 1)[1]) == {"gen": "g1", "run": "r1"}
+
+
 def test_sse_latido_tick_y_cierre():
     # EventSource no expone los comentarios (": ping"): el latido tiene que ser un evento con
     # nombre para que el cliente detecte una conexión muerta (design.md §10). Se prueba el

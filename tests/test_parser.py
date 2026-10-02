@@ -232,3 +232,15 @@ def test_cost_state_con_otro_formato_se_ve_como_unknown():
     assert [e.kind for e in p.events] == ["unknown"] and p.cost_state is None
     # sin modelos (un proceso que aún no ha gastado) es legítimo: medida vacía
     assert parse_line(line(type="cost-state", startTime=1, modelUsage={})).cost_state == (1, {})
+
+
+def test_cost_state_no_finito_o_negativo_no_es_una_medida():
+    # json.loads acepta NaN, Infinity y 1e999: un inf llegaba a internal_cost (share = inf/inf =
+    # NaN) y /api/overview daba 500 (allow_nan=False). Un coste así no es medida: se descarta, y
+    # si no queda ninguno, unknown como cualquier formato raro (auditoría F7).
+    p = parse_line(line(type="cost-state", startTime=1, modelUsage={
+        "a": {"costUSD": float("inf")}, "b": {"costUSD": float("nan")},
+        "c": {"costUSD": -1.0}, "d": {"costUSD": 0.5}, "e": {"costUSD": 1e308}}))
+    assert p.cost_state == (1, {"d": 0.5})
+    solo_inf = parse_line('{"type": "cost-state", "startTime": 1, "modelUsage": {"a": {"costUSD": 1e999}}}\n')
+    assert [e.kind for e in solo_inf.events] == ["unknown"] and solo_inf.cost_state is None

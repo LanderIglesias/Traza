@@ -6,7 +6,7 @@ from pathlib import Path
 from .parser import Request, Tokens
 
 # Subir cualquiera de los dos borra y reconstruye la BD: no hay migraciones (§6.4).
-PARSER_VERSION = "14"
+PARSER_VERSION = "15"
 SCHEMA_VERSION = "7"
 
 SCHEMA = """

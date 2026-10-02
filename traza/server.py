@@ -7,6 +7,7 @@ cada uno con su conexión de solo lectura (WAL: los lectores no esperan al escri
 import asyncio
 import json
 import re
+import secrets
 import sqlite3
 from contextlib import asynccontextmanager, closing, contextmanager
 from pathlib import Path
@@ -83,7 +84,8 @@ def make_server(app: FastAPI, port: int) -> uvicorn.Server:
     return _Server(config)
 
 
-async def sse_stream(hub: Hub, requested_gen, current_gen, heartbeat: float, is_disconnected):
+async def sse_stream(hub: Hub, requested_gen, current_gen, heartbeat: float, is_disconnected,
+                     run: str | None = None):
     """Eventos SSE para un navegador (design.md §10): hello, tick, ping (latido con nombre, que el
     cliente sí ve: un comentario ': ping' es invisible para EventSource) y reload."""
     if requested_gen is not None and requested_gen != current_gen:
@@ -91,7 +93,7 @@ async def sse_stream(hub: Hub, requested_gen, current_gen, heartbeat: float, is_
         return
     q = hub.subscribe()
     try:
-        yield f"event: hello\ndata: {json.dumps({'gen': current_gen})}\n\n"
+        yield f"event: hello\ndata: {json.dumps({'gen': current_gen, 'run': run})}\n\n"
         while not await is_disconnected():
             try:
                 msg = await asyncio.wait_for(q.get(), timeout=heartbeat)
@@ -112,6 +114,8 @@ def create_app(db_path, root, port: int, interval: float = 0.5,
     allowed_origins = {f"http://{h}" for h in allowed_hosts}
     hub = Hub()
     state = {"generation": None, "tick": 0}
+    # identificador de este arranque: la pestaña lo compara y se para si responde otro servidor
+    run = secrets.token_hex(8)
 
     async def on_tick(stats: dict) -> None:
         if stats["files_read"] or stats["deleted"]:  # solo si algo cambió
@@ -159,7 +163,7 @@ def create_app(db_path, root, port: int, interval: float = 0.5,
     @app.get("/api/overview")
     def overview():
         with reader(db_path) as conn:
-            return views.overview(conn)
+            return {**views.overview(conn), "run": run}
 
     @app.get("/api/sessions/{session_id}")
     def session(session_id: str):
@@ -200,7 +204,8 @@ def create_app(db_path, root, port: int, interval: float = 0.5,
 
     @app.get("/events")
     async def events(request: Request, gen: str | None = None):
-        stream = sse_stream(hub, gen, state["generation"], heartbeat, request.is_disconnected)
+        stream = sse_stream(hub, gen, state["generation"], heartbeat, request.is_disconnected,
+                            run=run)
         return StreamingResponse(stream, media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache"})
 

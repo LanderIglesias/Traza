@@ -90,7 +90,8 @@ heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `
   Claude Code aparece en ≤ 1 s sin recargar.
 - `curl` con `Host: evil.com` → rechazado (test).
 - Un navegador conectado con una generación de caché distinta (la BD se reconstruyó: cambio de
-  versión o reinicio tras borrarla) recibe `reload` por SSE y recarga (test). Nota: en Windows no
+  versión o reinicio tras borrarla) recibe `reload` por SSE y recarga (test). [F7: ahora se para con
+  "traza stopped" en vez de recargar sola, design.md §10.] Nota: en Windows no
   se puede borrar `traza.db` con el servidor abierto (el watcher la tiene abierta).
 
 ## F4 — Árbol de agentes, estados y coste por agente (~1 día)  ✅ tests verdes y prueba en vivo, pendiente de revisión
@@ -147,7 +148,8 @@ y el GIF enseñen el panel final. Piezas y tema elegidos por el autor.
   asigna a **una** categoría según el evento que lo precede, así que suman el 100 %:
   tras prompt o `tool_result` → **modelo**; tras `tool_use` → **herramienta** (salvo
   `AskUserQuestion`/`ExitPlanMode` → **usuario**); tras el texto final del modelo → **usuario**.
-  Medido: modelo 38–53 %, herramientas 22–40 %, usuario 17–34 % en las 4 sesiones más grandes.
+  Medido (recalculado el 02-10-2026 con el desglose corregido): modelo 33–58 %, herramientas
+  27–58 %, usuario 8–16 % en las 5 sesiones más grandes.
 - **Duración** de un agente = su tiempo activo; y de reloj, inicio–fin. Las dos se muestran.
 - **Barra de valor** ("Token Usage" de la referencia, adaptada): en qué se va el valor a precios
   de la API — lectura de caché, escritura de caché, salida, entrada. Por tokens no sirve: en la
@@ -176,9 +178,15 @@ sesiones y filtro 24 h / 7 d / todo.
 **Primero de v2 (revisión de F6.5), en este orden y antes que el resto de v2:**
 1. **Marca "skill fork" en las filas de la Timeline.** En el árbol el huérfano lleva su marca y
    en la Timeline sale como una fila normal: el usuario lo percibe como un bug.
-2. **Zoom en la Timeline.** No es cosmético: un subagente de 9 s en una sesión de 4 h 27 m
-   activas es una raya de 3 px, y los subagentes rápidos son la mayoría (mediana 1,9 min). Sin
-   zoom la Timeline no sirve para lo que existe: juzgar subagentes.
+2. **Zoom en la Timeline = dos vistas acopladas** (revisión antes de F7: v2 prioritario). Vista
+   de resumen (las barras continuas por agente de F7) y vista de detalle: pulsar un agente
+   reescala la timeline a su rango, con sus turnos como barras separadas (como blazo o
+   Perfetto). No es un slider. Un subagente de 9 s en 4 h 27 m activas sigue siendo una raya.
+3. **Brush para elegir una ventana de tiempo** sobre la vista de resumen; casi gratis tras el 2.
+
+**Hecho antes de F7 (revisión de la Timeline):** filas iguales colapsadas, una barra continua
+por agente segmentada por modelo / herramientas / tú, ancho mínimo de 1,5 px y pausas marcadas
+solo en el eje. Sin tocar colores ni añadir funciones.
 
 **Decisiones técnicas de la aprobación (escritas antes de programar):**
 1. **Tree | Timeline: dos pestañas dentro del panel de trabajo**, cada una con su propio layout

@@ -373,13 +373,17 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
 ## F6.5 — medidas para la vista de trazas (02-10-2026)
 
 - **Sesiones (59, agente principal):** duración de reloj mediana ~0 h, p90 88,5 h, máx. 264 h;
-  tiempo activo (huecos < 5 min) p90 2,3 h, máx. 13,5 h. En las sesiones de más de 2 h de reloj,
-  el activo es el 0–36 % (casi siempre < 10 %): una timeline a escala de reloj sería una raya.
+  en las sesiones de más de 2 h de reloj, el activo es el 0–36 % (casi siempre < 10 %): una
+  timeline a escala de reloj sería una raya. (Las cifras de tiempo activo y desglose de esta
+  sección se recalcularon el 02-10-2026 tras los bugs de "Antes de F7 — Timeline legible"; ver
+  el punto siguiente.)
 - **Subagentes (106):** duración mediana 1,9 min, p90 5,0 min, máx. 64 min.
-- **Desglose del tiempo activo del principal** (cada hueco < 5 min a la categoría del evento que
-  lo precede; suma el 100 % por construcción): 7bc000bb 12,0 h activo — modelo 43 %,
-  herramientas 40 %, usuario 17 % (205 h inactivo); 3416476c 9,7 h — 53/28/20 (164 h);
-  0d541f67 5,9 h — 38/29/34 (84 h); 0d6a5565 5,0 h — 51/22/27 (62 h).
+- **Desglose del tiempo activo del principal** (`timeline.breakdown` corregido, 02-10-2026, 65
+  sesiones): tiempo de trabajo p90 1,4 h, máx. 15,5 h. Las cinco mayores — modelo /
+  herramientas / tú (inactivo aparte): 7bc000bb 15,5 h — 33/58/10 (220 h); e093c05a 13,6 h —
+  55/37/8 (251 h); 3416476c 12,2 h — 36/54/10 (162 h); 0d541f67 6,0 h — 47/37/16 (84 h);
+  0d6a5565 5,3 h — 58/27/15 (65 h; sesión aún en curso). Invariante comprobado en los 193
+  agentes del disco: ningún desglose supera el tiempo activo de su sesión.
 
 ## F6.5 — Vista de trazas (02-10-2026)
 
@@ -387,9 +391,9 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
   910 barras de turno; 4 h 26 m activos, 58 h 52 m de pausas eliminadas del eje (20 pausas,
   marcadas con línea sin ancho); calculada en 13 ms, 125 KB → con posiciones a décimas, menos.
   La sesión de 277 $: 1.458 barras, 100 pausas, 18 ms.
-- **Desglose del principal:** modelo 53 %, herramientas 23 %, tú 23 %. Una herramienta de un
-  subagente (Haiku): 28 s activos, modelo 52 % / herramientas 48 %; su valor: 73 % escrituras de
-  caché, 22 % lecturas de caché, 5 % salida.
+- **Barra de valor de un subagente (Haiku):** 73 % escrituras de caché, 22 % lecturas de caché,
+  5 % salida. (El desglose de tiempo que se anotó aquí se calculó con la regla con el bug de
+  "Antes de F7" y se ha borrado; las cifras buenas están en "F6.5 — medidas".)
 - **En vivo:** dos subagentes `Explore` lanzados a la vez aparecen como filas nuevas con barras
   **solapadas** en el eje (16.082,5 s y 16.082,6 s de inicio); pulsar una barra abre la vista de
   juicio en ese turno, desplegado y resaltado. Duraron ~9 s en una sesión de 4 h 27 m activas:
@@ -412,3 +416,60 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
   nada cambió y devuelve el foco a la misma barra; (4) el botón de tema no hacía nada si el
   navegador bloquea el almacenamiento — la elección vive también en memoria; (5) "← All agents"
   perdía el foco al venir de la Timeline. (3)–(5) verificados en Chrome.
+
+## F7 — Auditoría de seguridad (02-10-2026)
+
+Auditoría completa (skill security-audit, perfil standard, sobre 07ac45f; informe fuera del repo).
+Sin sandbox en este Windows: revisión de código + experimentos solo con la stdlib.
+
+- **costUSD no finito (bug de robustez, no de seguridad).** `json.loads` acepta `NaN`,
+  `Infinity` y `1e999`; el parser aceptaba cualquier float en `cost-state`. NaN: `INSERT OR
+  IGNORE` también salta NOT NULL, así que la fila se perdía en silencio (no congelaba la
+  ingesta, como suponía el cazador). Infinity: se guardaba, `internal_cost` daba `share` =
+  inf/inf = NaN y `/api/overview` respondía 500 en cada petición (`allow_nan=False`). Dos
+  1e308 finitos también suman inf. Fix: solo `0 <= costUSD < 1e9` (`MAX_COST`); si no queda
+  ninguno, la línea es unknown (visible en salud). Test; PARSER 15 (reconstruye la caché).
+  Seguridad: rechazado — esas líneas las escribe Claude Code (Node: `JSON.stringify` no emite
+  NaN/Infinity); inyectarlas exige escribir en `~/.claude`, que ya da más que un 500.
+- **Primera vez que se sube `PARSER_VERSION` sin cambio de esquema** (14 → 15): el parser
+  descarta ahora valores que antes guardaba, así que una caché vieja podía tener un `inf`. La
+  versión del parser sirve para eso, no solo para el esquema: cambia lo que se lee → reconstruir.
+- **Puerto reservado una sola vez y `run` por arranque** (mejoras de la auditoría, no hallazgos
+  confirmados). Tests: otro socket no puede ocupar el puerto mientras uvicorn arranca; dos
+  `create_app` → `run` distintos, y `hello` lo lleva. Probado en Chrome: parar traza, arrancar
+  otro → la pestaña vieja pasa a "traza stopped · reload the page" y no pide nada más; F5 →
+  "Watching". Es sobre todo un bug de UX: la pestaña obedecía a cualquier servidor del 7420.
+- **Resto del informe a v2:** permisos 0700/0600 en POSIX, `Sec-Fetch-Site`, límite de
+  suscriptores SSE, contención del glob del watcher, tokens negativos, dependencias fijadas.
+
+## Antes de F7 — Timeline legible (02-10-2026)
+
+- **Diagnóstico (revisor):** no era estética sino codificación de datos. Medido en la sesión de
+  este proyecto: 42 agentes, 5,2 h activas, **2.559 marcas** (2.035 del principal); a ~500 px,
+  ~37 s por píxel: un peine. Los "racimos con huecos" no eran pausas sin quitar (el eje sí las
+  quitaba): las barras por turno solo pintaban modelo y herramienta, y el tiempo esperándote
+  (< 5 min) quedaba vacío.
+- **Hecho:** filas iguales colapsadas (42 → 4 filas en esa sesión), una barra continua por agente
+  (86 tramos en el principal tras agrupar a 1,5 px), pausas marcadas solo en el eje. Probado en
+  Chrome: escritorio y móvil (390 px, sin scroll horizontal), temas claro y oscuro, desplegar y
+  plegar un grupo (los miembros salen por su descripción), clic en la barra → turno.
+- **Dos bugs de datos encontrados al cuadrar la barra con el desglose (tests):**
+  1. Una llamada sin resultado (interrumpida) seguida de un prompt horas después contaba esas
+     horas como "herramienta": el desglose del principal sumaba **~10 h en 5,2 h activas**
+     (herramientas 5 h 26 m). Ahora "en marcha" exige el resultado, como en el eje
+     (`timeline.running`, que también usa `views._busy`): herramientas 1 h 24 m.
+  2. Eventos que retroceden en el orden del fichero (100 → 50 → 120) contaban 50–100 dos veces.
+     Ahora cada hueco cuenta desde el instante más tardío visto. Resultado: modelo 3 h 02 m +
+     herramientas 1 h 24 m + tú 46 m = 5 h 12 m de 5 h 17 m activas, y la barra continua suma
+     exactamente lo mismo que el desglose. El "tiempo activo" del resumen de agente (suma del
+     desglose) también cambia; las cifras de desglose de F6.5 se han recalculado o borrado.
+- **Mismo patrón en otros sitios (revisado, con test):** estado en vivo (`tool_in_flight`) y
+  señal de colgada exigen una herramienta de la última respuesta **sin prompt posterior**: no
+  tenían el agujero. Test nuevo con "herramienta sin resultado → prompt 4 h después" que cubre
+  estado, colgada, resumen del agente y timeline. Las barras por turno (que medían la duración
+  de cada turno) ya no existen.
+- **`/code-review` (antes del commit), 1 hallazgo, corregido con test:** la barra continua
+  alargaba hasta el final del eje CUALQUIER herramienta sin resultado, aunque el agente hubiera
+  seguido (reproducido: Bash a los 10 s, respuesta a los 30 s, subagente hasta 1000 s → 970 s de
+  "herramienta" inventados, y la barra dejaba de cuadrar con el desglose). Ahora solo la de la
+  última respuesta sin prompt posterior, la misma regla que el estado en vivo y la colgada.

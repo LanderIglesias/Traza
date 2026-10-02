@@ -559,55 +559,9 @@ def _timeline_events(conn, session_id: str, agent_id: str | None = None) -> dict
     return out
 
 
-def _bars(events: list[dict], axis: tl.ActiveAxis) -> list[dict]:
-    """Una barra por turno (§7.3: un turno = una petición). Tramo del modelo: desde el evento
-    que precede al turno (prompt o resultado: ahí empieza a pensar) hasta su último bloque.
-    Tramo de herramientas: de su primera llamada a su último resultado."""
-    turns, owner = {}, {}
-    for i, e in enumerate(events):
-        if e["kind"] in ("text", "tool_use") and e["request_id"]:
-            t = turns.get(e["request_id"])
-            if t is None:
-                prev = events[i - 1]["ts"] if i else e["ts"]
-                t = turns[e["request_id"]] = {"event": e["id"], "start": prev, "model_end": e["ts"],
-                                              "tool_start": None, "tool_end": None, "pending": set()}
-            t["model_end"] = e["ts"]
-            if e["kind"] == "tool_use":
-                owner[e["tool_use_id"]] = t
-                t["pending"].add(e["tool_use_id"])
-                t["tool_start"] = t["tool_start"] or e["ts"]
-        elif e["kind"] == "tool_result" and e["tool_use_id"] in owner:
-            # herramientas en paralelo: el tramo llega al ÚLTIMO resultado, no al primero
-            t = owner[e["tool_use_id"]]
-            t["pending"].discard(e["tool_use_id"])
-            if t["tool_end"] is None or (tl._secs(e["ts"]) or 0) > (tl._secs(t["tool_end"]) or 0):
-                t["tool_end"] = e["ts"]
-    out = []
-    for t in turns.values():
-        start, end = axis.offset(t["start"]), axis.offset(t["model_end"])
-        if start is None or end is None:
-            continue
-        bar = {"event": t["event"], "start": round(start, 1), "model_end": round(max(start, end), 1),
-               "tool_start": None, "tool_end": None}
-        if t["tool_start"]:
-            ts0 = axis.offset(t["tool_start"])
-            # alguna aún en marcha: el tramo sigue abierto hasta el final del eje
-            ts1 = axis.total if t["pending"] or not t["tool_end"] else axis.offset(t["tool_end"])
-            if ts0 is not None and ts1 is not None:
-                bar["tool_start"], bar["tool_end"] = round(ts0, 1), round(max(ts0, ts1), 1)
-        out.append(bar)
-    return out
-
-
 def _busy(by_agent: dict) -> list[tuple]:
-    """Tramos con una herramienta en marcha (salvo las que esperan al usuario): llamada → resultado."""
-    out = []
-    for evs in by_agent.values():
-        start = {e["tool_use_id"]: e["ts"] for e in evs
-                 if e["kind"] == "tool_use" and e["tool_name"] not in sig.WAITS_FOR_USER}
-        out += [(start[e["tool_use_id"]], e["ts"]) for e in evs
-                if e["kind"] == "tool_result" and e["tool_use_id"] in start]
-    return out
+    """Tramos con una herramienta en marcha en cualquier agente (timeline.running)."""
+    return [span for evs in by_agent.values() for span in tl.running(evs)]
 
 
 def _iso_s(secs: float | None) -> str | None:
@@ -617,7 +571,7 @@ def _iso_s(secs: float | None) -> str | None:
 
 def session_timeline(conn, session_id: str) -> dict | None:
     """Timeline de una sesión (F6.5): un eje de tiempo activo COMÚN a todos sus agentes (los
-    subagentes en paralelo caen en paralelo) y sus barras por turno."""
+    subagentes en paralelo caen en paralelo) y la barra continua de cada uno."""
     by_agent = _timeline_events(conn, session_id)
     if not by_agent:
         return None
@@ -626,7 +580,7 @@ def session_timeline(conn, session_id: str) -> dict | None:
     breaks = [{"at": round(b["at"], 1), "idle_s": round(b["idle_s"])} for b in axis.breaks]
     return {"axis": {"total": axis.total, "breaks": breaks,
                      "start": _iso_s(axis.start), "end": _iso_s(axis.end)},
-            "agents": {aid: {"bars": _bars(evs, axis),
+            "agents": {aid: {"segments": tl.segments(evs, axis),
                              "breakdown": tl.breakdown(evs)} for aid, evs in by_agent.items()}}
 
 

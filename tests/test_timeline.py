@@ -83,7 +83,8 @@ def test_timestamps_desordenados_no_restan():
     events = [ev("prompt", 0, origin="human"), ev("tool_use", 10, "r1", "Bash"),
               ev("tool_result", 9.987), ev("text", 15, "r2")]
     got = timeline.breakdown(events)
-    assert got["tool"] == 0 and got["model"] == pytest.approx(10 + 5.013)
+    # 0 → 15 de reloj: 15 s, no 10 + 5,013 (los 13 ms ya estaban contados; ver el test de abajo)
+    assert got["tool"] == 0 and got["model"] == pytest.approx(15)
 
 
 def test_texto_seguido_de_herramienta_de_la_misma_respuesta_es_modelo():
@@ -160,13 +161,12 @@ def test_timeline_de_sesion_con_eje_comun(conn):
     assert set(t["agents"]) == {"main", "abc"}
     total = t["axis"]["total"]
     for aid, a in t["agents"].items():
-        for b in a["bars"]:
-            assert 0 <= b["start"] <= b["model_end"] <= total + 1e-9, (aid, b)
-            assert b["event"] is not None                  # pulsar la barra lleva al turno
+        for start, end, kind, event in a["segments"]:
+            assert 0 <= start < end <= total + 1e-9, (aid, start, end)
+            assert kind in ("model", "tool", "user") and event is not None   # pulsar lleva ahí
     # el subagente corre DENTRO del tiempo del principal: mismo eje
-    main = t["agents"]["main"]["bars"]
-    (sub,) = t["agents"]["abc"]["bars"]
-    assert main[0]["start"] <= sub["start"] <= main[-1]["model_end"]
+    main, sub = t["agents"]["main"]["segments"], t["agents"]["abc"]["segments"]
+    assert main[0][0] <= sub[0][0] <= sub[-1][1] <= main[-1][1]
     assert views.session_timeline(conn, "no-existe") is None
 
 
@@ -185,8 +185,18 @@ def test_resumen_del_agente_cuadra(conn):
 
 def test_esperar_a_una_herramienta_larga_no_es_inactividad():
     # el principal espera 20 min a un subagente de primer plano (en disco, hasta 64 min)
-    events = [ev("tool_use", 0, "r1", "Agent"), ev("tool_result", 1200), ev("text", 1205, "r2")]
+    events = [dict(ev("tool_use", 0, "r1", "Agent"), tool_use_id="t"),
+              dict(ev("tool_result", 1200), tool_use_id="t"), ev("text", 1205, "r2")]
     assert timeline.breakdown(events) == {"model": 5, "tool": 1200, "user": 0, "idle": 0}
+
+
+def test_herramienta_sin_resultado_no_cuenta_horas_de_trabajo():
+    # una llamada interrumpida (nunca llega su resultado) y el siguiente prompt 3 h después: no
+    # es una herramienta en marcha 3 h. Antes el desglose lo contaba como herramienta y sumaba
+    # 10 h en una sesión de 5 h activas (el eje ya lo cortaba). Misma regla que el eje.
+    events = [dict(ev("tool_use", 0, "r1", "Bash"), tool_use_id="t"),
+              ev("prompt", 3 * 3600, None, None, "human"), ev("text", 3 * 3600 + 4, "r2")]
+    assert timeline.breakdown(events) == {"model": 4, "tool": 0, "user": 0, "idle": 3 * 3600}
 
 
 def test_esperar_al_usuario_mucho_rato_si_es_inactividad():
@@ -203,15 +213,63 @@ def test_eje_activo_no_corta_una_herramienta_en_marcha():
     assert timeline.ActiveAxis([at(0), at(900), at(910)]).total == 10
 
 
-def test_tramo_de_herramientas_en_paralelo_llega_al_ultimo_resultado(conn):
-    from traza.views import _bars
-    evs = [{"id": 1, "kind": "prompt", "tool_name": None, "tool_use_id": None, "request_id": None, "ts": at(0), "origin": "human"},
-           {"id": 2, "kind": "tool_use", "tool_name": "Read", "tool_use_id": "a", "request_id": "r", "ts": at(2), "origin": None},
-           {"id": 3, "kind": "tool_use", "tool_name": "Bash", "tool_use_id": "b", "request_id": "r", "ts": at(3), "origin": None},
-           {"id": 4, "kind": "tool_result", "tool_name": None, "tool_use_id": "a", "request_id": None, "ts": at(4), "origin": None},
-           {"id": 5, "kind": "tool_result", "tool_name": None, "tool_use_id": "b", "request_id": None, "ts": at(60), "origin": None}]
-    (bar,) = _bars(evs, timeline.ActiveAxis(e["ts"] for e in evs))
-    assert bar["tool_end"] == 60                     # el Bash largo, no el Read
-    # con el Bash aún en marcha, el tramo sigue abierto hasta el final del eje
-    (bar,) = _bars(evs[:4], timeline.ActiveAxis([at(0), at(2), at(3), at(4), at(30)]))
-    assert bar["tool_end"] == 30
+def test_tramo_de_herramientas_en_paralelo_llega_al_ultimo_resultado():
+    evs = [dict(ev(*a[:5]), id=i, tool_use_id=a[5]) for i, a in enumerate([
+           ("prompt", 0, None, None, "human", None), ("tool_use", 2, "r", "Read", None, "a"),
+           ("tool_use", 3, "r", "Bash", None, "b"), ("tool_result", 4, None, None, None, "a"),
+           ("tool_result", 60, None, None, None, "b")])]
+    segs = timeline.segments(evs, timeline.ActiveAxis(e["ts"] for e in evs))
+    assert segs[-1][1:3] == [60, "tool"]               # el Bash largo, no el Read
+    # con el Bash aún en marcha, el tramo de herramienta sigue abierto hasta el final del eje
+    segs = timeline.segments(evs[:4], timeline.ActiveAxis([at(0), at(2), at(3), at(4), at(30)]))
+    assert segs[-1][1:3] == [30, "tool"]
+
+
+# --- revisión de F6.5 (antes de F7): una barra continua por agente, no una marca por turno ---------
+
+def test_barra_continua_cuadra_con_el_desglose_y_funde_tramos():
+    # turnos de segundos en sesiones de horas eran rayas sub-píxel: ahora cada agente es una
+    # barra desde su primera hasta su última actividad, coloreada por quién tenía el turno
+    evs = [dict(ev(*a), id=i) for i, a in enumerate([
+        ("prompt", 0, None, None, "human"), ("text", 1, "r1"), ("tool_use", 2, "r1", "Read"),
+        ("tool_result", 10), ("text", 12, "r2"), ("prompt", 100, None, None, "human"),
+        ("text", 105, "r3"), ("prompt", 2000, None, None, "human"), ("text", 2003, "r4")])]
+    axis = timeline.ActiveAxis(e["ts"] for e in evs)
+    segs = timeline.segments(evs, axis)
+    # prompt→texto→llamada de la misma respuesta: un solo tramo de modelo, desde el evento 0
+    assert segs == [[0, 2, "model", 0], [2, 10, "tool", 2], [10, 12, "model", 3],
+                    [12, 100, "user", 4], [100, 105, "model", 5], [105, 108, "model", 7]]
+    # la pausa de 31 min (105 → 2000) no se dibuja: el eje la quitó y la barra la salta
+    assert axis.total == 108
+    b = timeline.breakdown(evs)
+    for k in ("model", "tool", "user"):
+        assert sum(e - s for s, e, kind, _ in segs if kind == k) == pytest.approx(b[k])
+
+
+def test_eventos_que_retroceden_en_el_tiempo_no_cuentan_dos_veces():
+    # en disco, el orden del fichero no siempre es cronológico (escrituras en paralelo): con
+    # 100 → 50 → 120 se contaba 50→120 entero (70 s) aunque 50–100 ya estaba contado. El
+    # desglose de la sesión real sumaba 6 h de trabajo en 5,3 h activas.
+    events = [dict(ev(*a), id=i) for i, a in enumerate([
+        ("prompt", 0, None, None, "human"), ("text", 100, "r1"), ("text", 50, "r1"), ("text", 120, "r1")])]
+    b = timeline.breakdown(events)
+    assert b["model"] + b["tool"] + b["user"] == 120
+    axis = timeline.ActiveAxis(e["ts"] for e in events)
+    segs = timeline.segments(events, axis)
+    assert sum(e - s for s, e, _, _ in segs) == pytest.approx(axis.total) == 120
+
+
+def test_herramienta_sin_resultado_no_se_alarga_si_el_agente_siguio():
+    # /code-review antes de F7: un Bash sin resultado a los 10 s, el agente responde otra vez a
+    # los 30 s y un subagente alarga el eje a 1000 s. La fila del principal pintaba 970 s de
+    # herramienta. Solo sigue abierta si es de la ÚLTIMA respuesta y sin prompt posterior (§7.1).
+    evs = [dict(ev(*a[:5]), id=i, tool_use_id=a[5]) for i, a in enumerate([
+        ("prompt", 0, None, None, "human", None), ("tool_use", 10, "r1", "Bash", None, "t"),
+        ("text", 30, "r2", None, None, None)])]
+    sub = [at(s) for s in range(100, 1001, 100)]          # un subagente escribiendo hasta 1000 s
+    axis = timeline.ActiveAxis([*(e["ts"] for e in evs), *sub])
+    assert axis.total == 1000
+    segs = timeline.segments(evs, axis)
+    assert segs[-1][1] == 30
+    b = timeline.breakdown(evs)
+    assert sum(e - s for s, e, _, _ in segs) == pytest.approx(b["model"] + b["tool"] + b["user"])

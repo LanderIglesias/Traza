@@ -153,8 +153,8 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .conn .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
 .conn[data-state="open"] .dot { background: var(--live); box-shadow: 0 0 0 4px rgb(31 157 85 / 0.15); }
 .conn[data-state="reconnecting"] .dot { background: #d98a00; box-shadow: 0 0 0 4px rgb(217 138 0 / 0.15); }
-.conn[data-state="lost"] .dot { background: var(--err); box-shadow: 0 0 0 4px rgb(180 35 24 / 0.15); }
-.conn[data-state="lost"] { color: var(--err); font-weight: 700; }
+.conn[data-state="lost"] .dot, .conn[data-state="stopped"] .dot { background: var(--err); box-shadow: 0 0 0 4px rgb(180 35 24 / 0.15); }
+.conn[data-state="lost"], .conn[data-state="stopped"] { color: var(--err); font-weight: 700; }
 
 /* --- tarjetas ------------------------------------------------------------------------------- */
 .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); }
@@ -445,6 +445,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 .sw-model { background: var(--think); }
 .sw-tool { background: var(--tool); }
+.sw-user { background: var(--ink-3); opacity: 0.6; }
 .sw-break { width: 2px; background: var(--ink-3); border-radius: 0; }
 
 .trace-chart { display: flex; flex-direction: column; gap: 2px; position: relative; }
@@ -456,17 +457,27 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .trace-track { position: relative; height: 18px; background: var(--sunk); border-radius: 5px; overflow: hidden; }
 .trace-bar {
   position: absolute; top: 2px; bottom: 2px; min-width: 3px; padding: 0; border: 0;
-  background: none; border-radius: 3px; cursor: pointer;
+  background: none; border-radius: 3px; overflow: hidden;
 }
+button.trace-bar { cursor: pointer; }
+.trace-group {
+  font: inherit; font-size: 13px; font-weight: 600; text-align: left; color: var(--ink);
+  background: none; border: 0; cursor: pointer; padding-top: 0; padding-bottom: 0; padding-right: 0;
+}
+.trace-group::before { content: "▸"; display: inline-block; width: 1em; color: var(--ink-2); }
+.trace-group[aria-expanded="true"]::before { content: "▾"; }
+.trace-group:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; border-radius: 4px; }
 .trace-bar:hover, .trace-bar:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; z-index: 1; }
-.seg { position: absolute; top: 0; bottom: 0; min-width: 2px; border-radius: 3px; }
+.seg { position: absolute; top: 0; bottom: 0; }
 .seg-model { background: var(--think); }
 .seg-tool { background: var(--tool); }
-.trace-break { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--ink-3); opacity: 0.55; pointer-events: none; }
+.seg-user { background: var(--ink-3); opacity: 0.6; }
+/* pausas: una marca sobre el eje, no una raya en cada fila (eso volvía a ser un código de barras) */
+.trace-break { position: absolute; top: -4px; height: 8px; width: 2px; background: var(--ink-2); border-radius: 1px; }
 .trace-axis { display: grid; grid-template-columns: minmax(120px, 30%) 1fr; gap: 10px; font-size: 12px; color: var(--ink-2); }
-.trace-ticks { position: relative; height: 16px; }
-.trace-ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.trace-ticks span:first-child { transform: none; }
+.trace-ticks { position: relative; height: 22px; border-top: 1px solid var(--line); }
+.trace-ticks span { position: absolute; top: 6px; transform: translateX(-50%); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.trace-ticks span:first-of-type { transform: none; }
 
 .breakdown { display: flex; flex-direction: column; gap: 6px; }
 .stack { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--sunk); }
