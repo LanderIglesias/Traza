@@ -130,7 +130,7 @@ heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `
   al evento.
 - La barra global muestra `unknown`, tipos ignorados (con desglose) y coste interno no desglosado.
 
-## F6.5 — Vista de trazas: timeline, resumen, desglose de tiempo, tendencias y temas (~2 días)
+## F6.5 — Vista de trazas: timeline, resumen, desglose de tiempo y temas  ✅ aprobada (con recorte)
 
 Origen: el día de uso (02-10-2026). El autor quiere tener en un solo sitio toda la información
 de los agentes y las sesiones de Claude Code, al estilo de su referencia (panel de
@@ -165,12 +165,13 @@ y el GIF enseñen el panel final. Piezas y tema elegidos por el autor.
    valor a precios de la API, y la barra de valor.
 3. **Desglose de tiempo**: modelo / herramientas / usuario, en barras con porcentaje y tiempo
    (como "Latency Breakdown"), por agente y por sesión.
-4. **Tendencias y filtros**: sparklines de 14 días en las tarjetas (valor a precios de la API por
-   día, sesiones por día, alertas por día); filtro de tiempo **24 h / 7 días / todo** que se
-   aplica a la lista de sesiones y a las tarjetas; buscador por título, proyecto o id de sesión
-   (en el cliente, sin servidor).
-5. **Tema claro y oscuro**: tokens de color redefinidos para oscuro, siguiendo el sistema por
-   defecto y con un interruptor (sol/luna) que recuerda la elección en el navegador.
+4. **Tema claro y oscuro** (medio día): tokens de color redefinidos para oscuro, siguiendo el
+   sistema por defecto y con un interruptor (sol/luna) que recuerda la elección en el navegador.
+
+El conmutador **Tree | Timeline** son dos pestañas dentro del panel de trabajo.
+
+**Recortado en la aprobación, a v2:** tendencias de 14 días en las tarjetas, buscador de
+sesiones y filtro 24 h / 7 d / todo.
 
 **Hecho cuando:**
 - Test: el desglose de tiempo de una fixture con huecos conocidos da los segundos exactos de
@@ -178,7 +179,6 @@ y el GIF enseñen el panel final. Piezas y tema elegidos por el autor.
 - Test: la compresión de huecos de la timeline (posiciones de las barras) con huecos de 2 min y
   de 3 h: el de 2 min a escala, el de 3 h como corte fijo.
 - Test: la barra de valor de una petición suma exactamente su valor (cuadra con `request_cost`).
-- Test: sparklines por día en hora local (el mismo día de cambio de hora que "Today").
 - En vivo con subagentes en paralelo: sus barras salen en paralelo, la timeline crece sin saltar
   y pulsar una barra lleva al turno.
 - Escritorio y móvil (390 px) en los dos temas; contraste ≥ 4,5:1 en oscuro medido; detector de
