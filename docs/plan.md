@@ -192,6 +192,9 @@ sesiones y filtro 24 h / 7 d / todo.
 - **El clic y el Enter del Flame (y de la Timeline) no tienen test automático:** el proyecto no
   tiene infraestructura de pruebas de navegador. Verificado a mano en Chrome (abre el agente, al
   volver el foco queda en el mismo bloque). Lo que sí tiene test es el layout (`flameLayout`).
+- **Los fallos de CSS no tienen test** (misma causa): p. ej. la barra de la sesión del Flame salía
+  coral porque `.fl-d0` pisaba a `.fl-root`, o la regla global `svg { width: 20px }` encogía el
+  Flame. Se ven solo en el navegador; cada cambio de CSS se verifica a mano en Chrome.
 
 **Hecho antes de F7: pestaña Flame** (design §7.5): ancho = valor a precios de la API, solo coste.
 
@@ -257,6 +260,12 @@ Posible historia para el README: el 92 % de los reintentos que funcionan **cambi
   disco frío o antivirus); los siguientes solo leen lo nuevo", qué es y qué no, GIF de demo (revisado para que no muestre datos
   personales), contrato de caché y ventana rodante de 30 días, "coste estimado", resultado del
   test oráculo, cómo se verificó cada dato.
+- **GIF hecho (`docs/demo.gif`, 13,8 s, 2,9 MB) con datos sintéticos, nunca con `~/.claude`**:
+  `tools/make_demo_data.py` (generador de demo, no las fixtures de los tests) y
+  `tools/record_demo.py` (Playwright + ffmpeg, reproducible). Una idea: en una sesión en vivo
+  el principal lanza dos subagentes, uno sube en el árbol ordenado por valor mientras trabaja,
+  terminan, y el Flame enseña 24 subagentes distinguibles. Títulos, proyectos y rutas
+  inventados (`/home/dev/code/web-app`…): un título real filtra en qué trabajas.
 - **Cifras del README y de las capturas con los números corregidos en F4** (el coste total
   subió de $981,05 a $983,43 al corregir `output_tokens`): regenerarlas al final, no copiar
   cifras de fases anteriores.

@@ -516,3 +516,19 @@ Sin sandbox en este Windows: revisión de código + experimentos solo con la std
   desaparecía del total sin aviso (la cabecera decía $10, el flame $5). El backend ya se protege
   de ciclos de un `meta.json` manipulado (`views.subtree`); el layout ahora recorre sin repetir y
   cuelga de la sesión lo que no alcanza. Test con autociclo y ciclo de dos.
+
+## F7 — GIF con datos de demo (02-10-2026)
+
+- **Generador** (`tools/make_demo_data.py`, determinista salvo las horas): 5 sesiones en 4
+  proyectos inventados; la principal imita la forma de 5a1f386d — 25 agentes, $7,99, el
+  principal 44 % y los subagentes 56 % ($0,04–$0,37 cada uno) — para que el Flame muestre bloques
+  distinguibles. Leído por traza: 0 líneas desconocidas, 0 sin precio.
+- **Fallo del generador visto en la primera grabación:** salían avisos de bucle en 3 sesiones.
+  Eran inventados por azar (la misma llamada tres veces seguidas); un aviso falso en el GIF
+  sería mentir. Ahora dos llamadas seguidas nunca son iguales: 0 señales.
+- **La cabecera de la tabla se perdía** al hacer scroll hasta las filas nuevas (columnas de
+  números sin título). Una cabecera fija no funciona aquí (la tabla no es el contenedor que hace
+  scroll vertical) y no se reestructura el Tree por un GIF: el guion ordena por "Own value" y
+  el subagente nuevo **sube** mientras gasta ($0,34 y cuarto a los 5 s), con la cabecera a la vista.
+- **Verificado en el render:** la barra de la sesión del Flame sale neutra (el arreglo de CSS
+  que no se había podido ver con Chrome desconectado).
