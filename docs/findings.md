@@ -369,3 +369,14 @@ Modelos presentes en disco: `claude-sonnet-5` (12.205 líneas), `claude-opus-5-5
   para display (≥ 16 px), fuente del sistema para texto pequeño y datos. Escala reducida a 7
   tamaños con papel y el 800 solo en display. Detector de impeccable limpio; verificado en
   escritorio (1×) y móvil (390 px).
+
+## F6.5 — medidas para la vista de trazas (02-10-2026)
+
+- **Sesiones (59, agente principal):** duración de reloj mediana ~0 h, p90 88,5 h, máx. 264 h;
+  tiempo activo (huecos < 5 min) p90 2,3 h, máx. 13,5 h. En las sesiones de más de 2 h de reloj,
+  el activo es el 0–36 % (casi siempre < 10 %): una timeline a escala de reloj sería una raya.
+- **Subagentes (106):** duración mediana 1,9 min, p90 5,0 min, máx. 64 min.
+- **Desglose del tiempo activo del principal** (cada hueco < 5 min a la categoría del evento que
+  lo precede; suma el 100 % por construcción): 7bc000bb 12,0 h activo — modelo 43 %,
+  herramientas 40 %, usuario 17 % (205 h inactivo); 3416476c 9,7 h — 53/28/20 (164 h);
+  0d541f67 5,9 h — 38/29/34 (84 h); 0d6a5565 5,0 h — 51/22/27 (62 h).

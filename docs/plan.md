@@ -130,6 +130,64 @@ heartbeat), `static/index.html`, `static/app.js`, `static/styles.css`. Comando `
   al evento.
 - La barra global muestra `unknown`, tipos ignorados (con desglose) y coste interno no desglosado.
 
+## F6.5 — Vista de trazas: timeline, resumen, desglose de tiempo, tendencias y temas (~2 días)
+
+Origen: el día de uso (02-10-2026). El autor quiere tener en un solo sitio toda la información
+de los agentes y las sesiones de Claude Code, al estilo de su referencia (panel de
+observabilidad de agentes con timeline tipo Gantt, "Run Summary", "Token Usage", "Latency
+Breakdown", tarjetas con tendencia, filtros y tema oscuro). Va **antes de F7** para que el README
+y el GIF enseñen el panel final. Piezas y tema elegidos por el autor.
+
+**Definiciones medidas sobre los datos reales (findings.md "F6.5 — medidas"):**
+- **Tiempo activo y compresión de huecos.** Las sesiones duran de reloj hasta 264 h; en las de
+  más de 2 h, el tiempo activo es el 0–36 %. Un hueco de más de **5 min** entre dos líneas de un
+  agente es inactividad: en la timeline se dibuja como un corte estrecho de ancho fijo
+  ("⋯ 3 h idle"), no a escala. Los subagentes duran poco (mediana 1,9 min, máx. 64 min).
+- **Desglose de tiempo** (sobre el tiempo activo, por agente y por sesión). Cada hueco < 5 min se
+  asigna a **una** categoría según el evento que lo precede, así que suman el 100 %:
+  tras prompt o `tool_result` → **modelo**; tras `tool_use` → **herramienta** (salvo
+  `AskUserQuestion`/`ExitPlanMode` → **usuario**); tras el texto final del modelo → **usuario**.
+  Medido: modelo 38–53 %, herramientas 22–40 %, usuario 17–34 % en las 4 sesiones más grandes.
+- **Duración** de un agente = su tiempo activo; y de reloj, inicio–fin. Las dos se muestran.
+- **Barra de valor** ("Token Usage" de la referencia, adaptada): en qué se va el valor a precios
+  de la API — lectura de caché, escritura de caché, salida, entrada. Por tokens no sirve: en la
+  sesión de 277 $ la lectura de caché son 579 M de tokens y la salida 1,4 M (99,8 % / 0,2 %).
+
+**Piezas:**
+1. **Timeline de sesión** (conmutador Tree | Timeline en el panel, como la referencia): una fila
+   por agente (sangrada como el árbol), barras por turno a lo largo del tiempo activo de la
+   sesión con los huecos comprimidos; en cada turno, el tramo del modelo y el de sus
+   herramientas en tonos distintos; los subagentes en paralelo se ven en paralelo. Pulsar una
+   barra abre la vista de juicio en ese turno (ya existe `goToEvent`). En vivo: crece por la
+   derecha sin saltar.
+2. **Resumen del agente** (en la vista de juicio y, para la sesión, en la cabecera): duración
+   activa y de reloj, inicio–fin, modelo(s), peticiones, tokens de entrada (con caché) y salida,
+   valor a precios de la API, y la barra de valor.
+3. **Desglose de tiempo**: modelo / herramientas / usuario, en barras con porcentaje y tiempo
+   (como "Latency Breakdown"), por agente y por sesión.
+4. **Tendencias y filtros**: sparklines de 14 días en las tarjetas (valor a precios de la API por
+   día, sesiones por día, alertas por día); filtro de tiempo **24 h / 7 días / todo** que se
+   aplica a la lista de sesiones y a las tarjetas; buscador por título, proyecto o id de sesión
+   (en el cliente, sin servidor).
+5. **Tema claro y oscuro**: tokens de color redefinidos para oscuro, siguiendo el sistema por
+   defecto y con un interruptor (sol/luna) que recuerda la elección en el navegador.
+
+**Hecho cuando:**
+- Test: el desglose de tiempo de una fixture con huecos conocidos da los segundos exactos de
+  cada categoría y suma el tiempo activo; un hueco de > 5 min no cuenta.
+- Test: la compresión de huecos de la timeline (posiciones de las barras) con huecos de 2 min y
+  de 3 h: el de 2 min a escala, el de 3 h como corte fijo.
+- Test: la barra de valor de una petición suma exactamente su valor (cuadra con `request_cost`).
+- Test: sparklines por día en hora local (el mismo día de cambio de hora que "Today").
+- En vivo con subagentes en paralelo: sus barras salen en paralelo, la timeline crece sin saltar
+  y pulsar una barra lleva al turno.
+- Escritorio y móvil (390 px) en los dos temas; contraste ≥ 4,5:1 en oscuro medido; detector de
+  impeccable limpio; `/code-review` antes de cerrar.
+
+**Fuera de alcance** (está en la referencia y no aplica o no se pide): búsqueda dentro del
+contenido de los turnos, evaluaciones, datasets, playground, compartir, etiquetas, cuentas de
+usuario.
+
 ## F7 — Empaquetado y portfolio (~1 día)
 
 **Antes de empezar (revisión de F6):** usar el panel **un día entero de trabajo real sin escribir
