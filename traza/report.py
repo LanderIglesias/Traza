@@ -1,7 +1,7 @@
-"""Comando de verificación de F1: python -m traza.report <sesión.jsonl>
+"""Usage: traza report <session.jsonl>
 
-Imprime agentes, peticiones, tokens y coste estimado por modelo de una sesión (fichero principal
-y sus subagentes). Solo lee.
+Prints the agents, requests, tokens and value at API prices per model of one Claude Code session
+(its main file and its subagents), read straight from the logs, without the cache. Read-only.
 """
 import sys
 from collections import Counter
@@ -47,7 +47,7 @@ def main(argv: list[str]) -> int:
 
     all_reqs = {}
     ignored, unknown = Counter(), 0
-    print(f"Sesión {main_file.stem}")
+    print(f"Session {main_file.stem}")
     for agent_id, meta, path in files:
         parsed = parse_file(path)
         reqs = dedupe_requests(p.request for p in parsed if p.request)
@@ -56,14 +56,14 @@ def main(argv: list[str]) -> int:
         ignored.update(p.ignored for p in parsed if p.ignored)
         unknown += sum(e.kind == "unknown" for p in parsed for e in p.events)
         label = f"{meta.agent_type} · {meta.description}" if meta else ""
-        print(f"  agente {agent_id:<20} {len(parsed):>6} líneas  {len(reqs):>5} peticiones  "
+        print(f"  agent {agent_id:<20} {len(parsed):>6} lines  {len(reqs):>5} requests  "
               f"{_cost(reqs.values()):>12}  {label}")
 
-    print("\nModelo                       input    output   cache_r   cw_5m   cw_1h   coste est.")
+    print("\nModel                        input    output   cache_r   cw_5m   cw_1h    API value")
     for model, t in sorted(tokens_by_model(all_reqs.values()).items(), key=lambda kv: str(kv[0])):
         cost = _cost(r for r in all_reqs.values() if r.model == model)
         print(f"  {model!s:<24}", *(f"{'?' if v is None else v:>9}" for v in t), f"{cost:>12}")
-    print(f"\nunknown: {unknown} · ignorados: {sum(ignored.values())} {dict(ignored)}")
+    print(f"\nunknown: {unknown} · ignored on purpose: {sum(ignored.values())} {dict(ignored)}")
     return 0
 
 

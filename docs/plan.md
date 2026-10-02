@@ -277,7 +277,12 @@ Posible historia para el README: el 92 % de los reintentos que funcionan **cambi
 - README, límites de lo que Claude Code escribe (no son bugs de traza): subagentes sin fin
   registrado en disco (3 de 93) se quedan en "idle" con tooltip; `output_tokens` mal escrito
   (aviso de plausibilidad); skill forks sin enlazar a su padre (decisión, design.md §6.1).
-- **Notas de la revisión de F5** (decidir y probar antes de cerrar F7):
+- **Notas de la revisión de F5 — decidido (02-10-2026):** las dos que un usuario nota en su primera
+  sesión van a F7 y se arreglan si fallan: (1) "Load earlier" y (2) el salto de scroll, verificadas
+  en Chrome con una sesión real larga. Las otras tres (3)–(5) son **medir para saber**, no para
+  arreglar: se miden y la cifra va a findings; si alguna sale mal, se documenta como límite.
+  Orden de F7: README reposa → impeccable audit + critique → estas notas → `/code-review` de F7.
+  Notas originales:
   1. "Load earlier" no tiene tope (300 turnos = 6 clics), no se puede volver a plegar y se
      resetea al cambiar de agente: decidir si basta o hace falta "cargar todos" / "volver a 50".
   2. Scroll con turnos anteriores cargados y un tick nuevo: comprobar que la vista no salta.

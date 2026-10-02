@@ -59,11 +59,11 @@ figure still tells you where the volume went.
 - **Estimated, and checked.** Now and then Claude Code writes a `cost-state` line with its own
   per-model token count for the running process. A test compares traza's count against it
   ([`tests/test_oracle.py`](tests/test_oracle.py), run locally against real logs). On this disk
-  four sessions have one. In the two known to be clean, traza matches **to the token and to the
-  micro-dollar** (e.g. 23,334 output tokens and $2.012743 on both sides). The other two don't
-  match, and are reported rather than hidden: one is a copied session whose log carries history
-  that process never spent; in the other, traza counts more than the process reported, and the
-  cause is not known yet. These lines are rare, so this is a spot check of accuracy, not a
+  four sessions have one. In three of them traza matches **to the token and to the
+  micro-dollar** (e.g. 23,334 output tokens and $2.012743 on both sides). In one of those three,
+  Claude Code's counter had restarted after an 18-hour pause without changing its start time;
+  measured by hand from the restart, it matches exactly. The fourth is a copied session whose log carries
+  history that process never spent, and it is reported as such. These lines are rare, so this is a spot check of accuracy, not a
   regression suite, and it cannot catch a mistake that traza and the check would both make.
   Separate tests cover each counting rule with data where the wrong rule gives a different answer.
 - **`?` means unknown, never zero.** A model missing from the price table, or a request without
