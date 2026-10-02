@@ -282,6 +282,9 @@ Posible historia para el README: el 92 % de los reintentos que funcionan **cambi
   en Chrome con una sesión real larga. Las otras tres (3)–(5) son **medir para saber**, no para
   arreglar: se miden y la cifra va a findings; si alguna sale mal, se documenta como límite.
   Orden de F7: README reposa → impeccable audit + critique → estas notas → `/code-review` de F7.
+  "Load earlier" y el salto de scroll se comprueban **por separado** (el salto, si aparece, molesta
+  más). **`pipx install git+…`:** desde un directorio sin nada de traza y con `~/.traza/`
+  renombrado temporalmente, para ver que la primera ejecución lo crea todo desde cero.
   Notas originales:
   1. "Load earlier" no tiene tope (300 turnos = 6 clics), no se puede volver a plegar y se
      resetea al cambiar de agente: decidir si basta o hace falta "cargar todos" / "volver a 50".

@@ -683,6 +683,12 @@ queda ninguna, el test se salta con ese motivo. Las copias (sesiones que compart
    `requestId` con otra) se informan como *known issue*, no como fallo. Así el test es verde hoy
    y se pone rojo solo si una sesión sana deja de cuadrar. Este test corre solo en local: depende
    de datos reales que no están en el repo.
+   **El oráculo no es la verdad: es una segunda interpretación** de los mismos datos, con sus
+   propios errores. Cuadra cuando el proceso de Claude Code no se ha reiniciado a mitad de sesión
+   (7bc000bb: contador reiniciado tras 18 h sin cambiar `startTime`). Cuando cuadra, valida; cuando
+   no, hay que determinar quién se equivoca antes de decidir que traza falla. El test avisa (no
+   decide) si una sesión tiene varios `cost-state` con el mismo `startTime`: lo hacen 7bc000bb y
+   también 3416476c, la copia (sin investigar si ahí influye además un reinicio).
    **Límite estructural del oráculo:** solo detecta los errores que **no comparte** con el
    parser. Si los dos caminos interpretan el JSONL igual de mal, coinciden y el test pasa. Así
    vivió desde F1 hasta F4 el bug de `output_tokens` (se tomaba el de la primera línea; crece

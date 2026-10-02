@@ -41,6 +41,14 @@ def oracle_checks():
                 p.request for p in parsed[:i]
                 if p.request and p.request.timestamp and ms(p.request.timestamp) >= cs["startTime"])
             is_copy = any(owners[rid] > 1 for rid in window)
+            # Aviso, no regla (un solo caso visto, 7bc000bb): varios cost-state del mismo proceso
+            # (mismo startTime) pueden venir de un contador reiniciado tras una pausa larga sin
+            # cambiar startTime; entonces la ventana [startTime, línea] cuenta de más.
+            same_process = sum('"cost-state"' in x and json.loads(x).get("startTime") == cs["startTime"]
+                               for x in lines[:i + 1])
+            if same_process > 1:
+                warnings.warn(f"{f.stem[:8]}: {same_process} cost-state con el mismo startTime; "
+                              "el oráculo puede no ser fiable en esta sesión")
             # Solo se leen tokens del fichero principal: con subagentes la comparación no es fiable
             # (no se sabe si cost-state suma su gasto). Se avisa en vez de dar un verde que miente.
             has_subagents = (f.parent / f.stem / "subagents").is_dir()
