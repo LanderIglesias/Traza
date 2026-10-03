@@ -385,6 +385,11 @@ def _block_text(b) -> str:
     return ""
 
 
+# Herramientas con las que un subagente entrega su informe en vez de escribirlo como texto
+# (F5, nota 5: los 10 casos del disco salían como "finished without writing any text")
+HANDBACK_TOOLS = ("SubagentHandback",)
+
+
 def _extract(d: dict, kind: str, block: int) -> str | None:
     """El texto del evento en su línea, o None si la línea ya no es la que se indexó."""
     try:
@@ -402,6 +407,9 @@ def _extract(d: dict, kind: str, block: int) -> str | None:
         if kind == "text":
             return b["text"]
         if kind == "tool_use":
+            message = (b.get("input") or {}).get("message")
+            if b.get("name") in HANDBACK_TOOLS and isinstance(message, str):
+                return message                 # el informe tal cual, no un JSON con saltos escapados
             return f"{b.get('name')}\n{json.dumps(b.get('input'), indent=2, ensure_ascii=False)}"
         if kind == "tool_result":
             return _block_text(b)
@@ -534,10 +542,16 @@ def agent_view(conn, session_id: str, agent_id: str, root=None, now: float | Non
         if parent and parent[1] != "async_launched" and (parent[2] or "") >= (last_ts or ""):
             result = {"id": parent[0], "source": "parent_result"}
         else:
+            # si entregó su informe con una herramienta (SubagentHandback), ese es el resultado
+            handback = conn.execute(f"""SELECT MAX(id) FROM events WHERE session_id = ?
+                                   AND agent_id = ? AND kind = 'tool_use'
+                                   AND tool_name IN ({",".join("?" * len(HANDBACK_TOOLS))})""",
+                                    (session_id, agent_id, *HANDBACK_TOOLS)).fetchone()[0]
             last = conn.execute("""SELECT MAX(id) FROM events WHERE session_id = ?
                                    AND agent_id = ? AND kind = 'text'""",
                                 (session_id, agent_id)).fetchone()[0]
-            result = {"id": last, "source": "final_text"} if last else None
+            result = ({"id": handback, "source": "handback"} if handback
+                      else {"id": last, "source": "final_text"} if last else None)
     return {"agent": node, "task": task, "result": result,
             "summary": agent_summary(conn, session_id, agent_id),
             "items": items[start:end], "start": start, "total": len(items)}

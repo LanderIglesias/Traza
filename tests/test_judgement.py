@@ -83,6 +83,25 @@ def test_encargo_timeline_y_resultado_de_un_subagente(conn, root):
         "x no aparece en el repo."
 
 
+def test_informe_entregado_con_subagent_handback(tmp_path, root):
+    # F5, nota 5: los 10 subagentes del disco con "finished without writing any text" sí
+    # devolvieron un informe, pero con la herramienta SubagentHandback, no con texto. Ese informe
+    # es el resultado (por delante del último texto suelto), y se lee como texto, no como JSON.
+    sub = root / "proj" / "sess-A" / "subagents" / "agent-abc.jsonl"
+    _append(sub, {"type": "assistant", "uuid": "a3", "requestId": "req_s3",
+                  "timestamp": "2026-01-01T10:00:18.000Z", "message": {
+                      "model": "claude-haiku-4-5-20251001", "stop_reason": "tool_use",
+                      "content": [{"type": "tool_use", "id": "toolu_hb", "name": "SubagentHandback",
+                                   "input": {"message": "Informe:\n- x no está en el repo"}}],
+                      "usage": _usage(5)}})
+    c = db.connect(tmp_path / "t3.db")
+    scan(c, root)
+    j = views.agent_view(c, "sess-A", "abc", root=root)
+    assert j["agent"]["state"] == "done"
+    assert j["result"]["source"] == "handback"
+    assert _content(c, root, [j["result"]["id"]])[j["result"]["id"]]["text"] == "Informe:\n- x no está en el repo"
+
+
 def test_resultado_de_primer_plano_es_lo_que_recibio_el_padre(tmp_path, root):
     main = root / "proj" / "sess-A.jsonl"
     main.write_text(main.read_text(encoding="utf-8").replace(

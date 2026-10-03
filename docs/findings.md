@@ -654,3 +654,8 @@ Regeneradas con el código actual (PARSER 15), reconstruyendo la caché en frío
    pantalla como se diseñó. Pero los 10 casos del disco son subagentes que **sí** devolvieron un
    informe, con la herramienta `SubagentHandback` en su último turno en vez de con texto: el
    mensaje es literalmente cierto y hace creer que no devolvieron nada. Pendiente de decidir.
+- **Notas 3 y 5, arregladas (decisión del autor):** (3) `scanning` en `/api/overview` hasta el
+  primer tick y "Reading your Claude Code logs… The first start builds the cache" en el panel;
+  verificado en frío con el disco real (las 65 sesiones aparecen solas al terminar, sin recargar).
+  (5) el resultado de un subagente que entrega con `SubagentHandback` es ese informe, leído como
+  texto; verificado con el crítico de cobertura de la auditoría (7.546 caracteres). Tests de los dos.

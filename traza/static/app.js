@@ -523,7 +523,7 @@ function paintJudge(j, v) {
   const res = $("j-result");
   $("j-result-block").hidden = a.id === "main";
   if (v.result) {
-    $("j-result-h").textContent = v.result.source === "parent_result" ? "Returned to parent" : "Final answer";
+    $("j-result-h").textContent = v.result.source === "final_text" ? "Final answer" : "Returned to parent";
     if (res.dataset.content !== String(v.result.id)) setContentId(res, v.result.id);
   } else {
     $("j-result-h").textContent = "Returned to parent";

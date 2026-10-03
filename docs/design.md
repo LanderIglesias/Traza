@@ -519,8 +519,14 @@ Decisiones de F3 (revisión del brief, 30-09-2026):
     resultado sin su llamada) van como elementos aparte, plegados.
   - **Encargo** = primer prompt del subagente (fuera de la timeline). El principal no tiene.
   - **Resultado devuelto**, solo si el agente está `done`: en primer plano, el `tool_result`
-    que recibió el padre (exactamente lo que vio); en segundo plano o skill fork, su último
-    texto ("Final answer"). Sin fin registrado → se dice, no se inventa.
+    que recibió el padre (exactamente lo que vio); en segundo plano o skill fork, el informe
+    que entregó con una herramienta de entrega (`SubagentHandback`, leído como texto) si la usó,
+    y si no su último texto ("Final answer"). Sin fin registrado → se dice, no se inventa.
+    (F5, nota 5: los 10 "finished without writing any text" del disco habían entregado su informe
+    con esa herramienta.)
+  - **Primer arranque:** hasta que termina el primer escaneo, `/api/overview` dice
+    `scanning: true` y el panel muestra "Reading your Claude Code logs…" en vez de "no hay
+    sesiones", que sería falso (F5, nota 3).
   - Plegado: abierto por defecto solo el último turno; lo que el usuario abre o cierra se
     respeta en cada tick. El contenido se pide al desplegar y se guarda por id.
   - "Cargar anteriores" pide `before=<start>` y desde entonces cada tick pide
