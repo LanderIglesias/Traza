@@ -1,22 +1,26 @@
 # traza
 
 A local, read-only, live dashboard for Claude Code. It reads the session logs Claude Code already
-writes to `~/.claude/projects` and shows every agent and subagent, what each one is doing right
-now, and how many tokens each one used, with their value at API prices: what those tokens would
-cost on Anthropic's API, not what you paid.
+writes and shows every agent and subagent: what each one is doing now, what its tokens are worth
+at API prices, and what it actually did, so you can judge whether it did its job. Nothing leaves
+your machine.
+
+Knowing what a session cost is easy. Knowing whether forty subagents did useful work is not:
+traza puts each agent's task, tool calls, result and a few automatic signals side by side, live.
+
+![The traza dashboard: sessions on the left, the agent tree of the selected session sorted by value, and the parser health bar at the bottom](docs/screenshot.png)
 
 ![A subagent is launched and moves up the agent tree while it works; the Flame view then shows which agents account for most of the value at API prices](docs/demo.gif)
 
-*The GIF uses synthetic sessions made by [`tools/make_demo_data.py`](tools/make_demo_data.py),
-not real ones.*
+*Both images use synthetic sessions, not real logs.*
 
 **Status:** v0.0.1, early. Developed and tested on Windows 11 with logs from Claude Code
 2.1.226–2.1.288.
 
 ## Install
 
-You need Python 3.11+ and a machine where Claude Code has already run (traza reads its logs;
-with none, the panel is empty until a session starts).
+You need Python 3.11+ and a machine where Claude Code has already run. traza reads its logs
+(in `~/.claude/projects`); with no logs, the panel starts empty until a session begins.
 
 ```sh
 pipx install git+https://github.com/LanderIglesias/traza
@@ -25,10 +29,10 @@ pipx install git+https://github.com/LanderIglesias/traza
 traza serve
 ```
 
-`traza serve` opens `http://127.0.0.1:7420` in your browser. Two dependencies (FastAPI, uvicorn),
-no account, no API key, and nothing leaves your machine. The first start builds a local cache
-(`~/.traza/traza.db`): about 3 s for 110,000 log lines on the author's machine, longer on a cold
-disk or with an antivirus scanning. After that it only reads new lines.
+`traza serve` opens `http://127.0.0.1:7420` in your browser. No account, no API key. The first
+start builds a local cache (`~/.traza/traza.db`): 3–6 s for about 110,000 log lines on the
+author's machine, longer on a cold disk or with an antivirus scanning. After that it only reads
+new lines.
 
 ## Usage
 
@@ -48,23 +52,18 @@ created, delete `~/.traza`.
 - **Agent tree, live.** Every session with its agents and subagents, nested as they were
   launched, each with its state (running a tool, thinking, idle, done), updated as Claude Code
   writes. A Timeline tab shows when each agent was working.
-- **Value per agent.** Tokens and their value at API prices per request, agent and session, for
-  each agent alone and including the subagents it launched. A Flame tab (a flame chart: width =
-  value) makes forty subagents of the same type distinguishable at a glance.
+- **Value per agent.** Tokens and their value at API prices, per request, agent and session, for
+  each agent alone and including the subagents it launched. The Flame tab (a flame chart:
+  width = value) makes forty subagents of the same type distinguishable at a glance.
 - **Per-agent detail ("judgement view").** For any agent: the task it was given, its tool calls
-  turn by turn, and what it returned to its parent, so you can judge whether it did its job.
-  Long text is read from the log when you open it; the cache doesn't copy it.
+  turn by turn, and what it returned to its parent. Long text is read from the log when you open
+  it; the cache doesn't copy it.
 - **Signals.** Tool errors, calls blocked by permissions or hooks, API errors, loops (the same
   call three times in a row), retries, tools that seem stuck, and context compactions, each
   linked to the turn where it happened.
 
 A **health bar** at the bottom says how much of the logs traza understood: lines it didn't
 recognise, lines it skips on purpose, and requests whose token counts look wrong.
-
-What it showed on the author's machine: in the two sessions with about 40 subagents (42 and 39),
-the main thread accounted for 90% and 96% of the value. The many subagents were cheap; carrying
-the main thread's long context was the expensive part. In a session where a task was split into
-24 short subagents, the subagents took 57%.
 
 ## What it does not do
 
@@ -104,19 +103,26 @@ Other rules behind the numbers:
 
 - **`?` means unknown, never zero.** A model missing from the price table, or a request without
   token counts, shows `?`. A total with some unknown parts shows `$X+`.
-- **Internal cost is "at least".** Claude Code makes calls of its own (titles, summaries, usually
-  on a small model) and does not log them. traza can measure them from `cost-state` only for
-  models the session never used in a logged request; calls to a model it also used can't be
-  separated. So the health bar says "internal cost measured: at least $0.09 in 3 sessions", and
+- **Internal cost is "at least".** Claude Code makes some calls of its own (titles, summaries)
+  that never appear in the log, so their cost is invisible to a log reader. traza reports what it
+  can measure and marks it as a minimum: it reads them from `cost-state`, but only for models the
+  session never used in a logged request, because calls to a model it also used can't be
+  separated. The health bar then says "internal cost measured: at least $0.09 in 3 sessions", and
   says nothing when there is nothing to measure.
 - **Implausible token counts are flagged, not fixed.** Sometimes Claude Code never writes the
-  final line of a response with its full token count (466 requests on the author's machine, e.g.
-  7 output tokens for 10,254 characters of text). traza counts these in the health bar; it can't
-  recover the real number.
+  final line of a response with its full token count (e.g. 7 output tokens for 10,254 characters
+  of text). traza counts these in the health bar; it can't recover the real number.
+
+**On the author's machine** (65 sessions, 3 October 2026): 0 unknown lines; 63% of lines ignored
+on purpose, mostly hook output and session metadata; 467 requests flagged as implausible. And
+what the Flame view showed: in the two sessions with about 40 subagents (42 and 39), the main
+agent accounted for 90% and 96% of the value. The many subagents were cheap; re-reading and
+re-caching the main agent's long context on every request was the expensive part. In a session
+where a task was split into 24 short subagents, the subagents took 57%.
 
 ## Known limits
 
-- **Subagents with no recorded end.** For 3 of 131 subagents on the author's machine, Claude
+- **Subagents with no recorded end.** For 3 of 132 subagents on the author's machine, Claude
   Code never wrote an end, so they stay "idle" instead of "done" (a tooltip says why). The log
   doesn't contain it; it is not a panel bug.
 - **Logs rewritten while traza runs.** Detecting a log that is truncated or replaced during a
@@ -130,15 +136,16 @@ Other rules behind the numbers:
 
 ## How it is built
 
-FastAPI + Server-Sent Events + SQLite (WAL), and plain HTML, CSS and JavaScript: no build step,
-no frontend framework, no CDN. A watcher reads new log lines every 0.5 s into a disposable cache:
-delete it and it is rebuilt from the logs. Log text is always rendered with `textContent`, never
-as HTML. Design decisions and the evidence behind them, in Spanish:
-[`docs/design.md`](docs/design.md), [`docs/findings.md`](docs/findings.md).
+Two runtime dependencies, FastAPI and uvicorn: FastAPI + Server-Sent Events + SQLite (WAL), and
+plain HTML, CSS and JavaScript, with no build step, no frontend framework and no CDN. A watcher
+reads new log lines every 0.5 s into a disposable cache: if it's ever corrupted or out of date,
+delete it and it is rebuilt from the logs, which are the source of truth. Log text is always
+rendered with `textContent`, never as HTML. Design decisions and the evidence behind them, in
+Spanish: [`docs/design.md`](docs/design.md), [`docs/findings.md`](docs/findings.md).
 
 ```sh
 pip install -e ".[dev]"
-pytest    # the Flame layout tests need Node (skipped without it); test_oracle reads ~/.claude
+pytest    # Flame layout tests need Node and are skipped without it; test_oracle is skipped without real logs
 ```
 
 ## License

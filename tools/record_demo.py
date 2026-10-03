@@ -1,6 +1,6 @@
 """Graba el GIF del README con datos de demo (tools/make_demo_data.py), nunca con ~/.claude.
 
-    python tools/record_demo.py                 # → docs/demo.gif
+    python tools/record_demo.py                 # → docs/demo.gif y docs/screenshot.png
 
 Una idea en ~12 s: en una sesión en vivo, el principal lanza dos subagentes; aparecen en el árbol
 (ordenado por valor) trabajando y suben mientras gastan, terminan, y el Flame enseña quién se
@@ -24,6 +24,7 @@ import make_demo_data as demo  # noqa: E402
 PORT = 7433
 URL = f"http://127.0.0.1:{PORT}"
 OUT = Path(__file__).parent.parent / "docs" / "demo.gif"
+SHOT = OUT.with_name("screenshot.png")   # la captura estática del README: el árbol al terminar
 
 
 def wait_ready(url: str) -> None:
@@ -62,6 +63,8 @@ def main() -> None:
             runner.start()
             runner.join()
             page.wait_for_timeout(1500)                    # terminan, con su coste
+            SHOT.parent.mkdir(exist_ok=True)
+            page.screenshot(path=str(SHOT))
             page.click('.tabs [data-tab="flame"]')
             page.wait_for_timeout(3500)
             end = time.monotonic() - t0

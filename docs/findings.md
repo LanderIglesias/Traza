@@ -575,3 +575,18 @@ Regeneradas con el código actual (PARSER 15), reconstruyendo la caché en frío
   la API con datos. [sin verificar] `pipx install git+https://…`: el repo aún no está publicado.
 - **CLI en inglés** (`traza scan`, `traza report` y su texto de uso): son superficie pública, como
   el README. Los docs internos (design, plan, findings) siguen en español: memoria del proyecto.
+
+## F7 — README, segunda revisión (03-10-2026)
+
+- **Cifras re-medidas** (caché reconstruida en frío): 112.692 líneas, 9.722 peticiones, 132
+  subagentes (129 "done", los mismos 3 "idle"), 467 peticiones implausibles, coste interno al
+  menos $0,09 en 3 sesiones. Escaneo en frío: 6,16 s (ayer 3,24 s con 111.586 líneas: varía con
+  el estado del disco) → el README dice "3–6 s". El disco crece: el README fecha las cifras.
+- **Líneas ignoradas: 70.809 de 112.692 (63 %).** Salida de hooks (`attachment` `hook_success`
+  27.686, `async_hook_response` 8.762, `hook_additional_context` 230) = 52 % de lo ignorado; el
+  resto, recordatorios y metadatos de sesión (`total_tokens_reminder`, `last-prompt`,
+  `atis-latch`, `mode`, `bridge-session`…).
+- **`test_oracle` en un repo clonado sin logs** (HOME vacío): se salta con su motivo; suite
+  211 + 1 saltado. Es ejecutable sin Claude Code.
+- **Captura estática** `docs/screenshot.png` (51 KB, datos de demo) generada por
+  `tools/record_demo.py` junto al GIF.
