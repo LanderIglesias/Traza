@@ -652,13 +652,14 @@ con 40 agentes del mismo tipo las etiquetas no distinguen, el **ancho** sí.
 - **Agregados:** hijos de menos de 3 px o más hondos que 8 niveles se juntan en un bloque "N more
   agents" (N cuenta también sus descendientes). El mínimo es en píxeles: en móvil se agrega más.
 - **Colores por profundidad** (5 tokens que se repiten, claro y oscuro), no por tipo ni estado.
-- **Etiqueta dentro si cabe; si no, leyenda** (y `<title>` del SVG). La leyenda es el índice de
-  todos los agentes **sin nombre visible** (agregados en "N more" y bloques donde la etiqueta no
-  cabe), por valor, con descripción, $ y %: en un panel ≥ 640 px va en una columna de 280 px al
-  lado del Flame (el ancho del Flame se calcula descontándola; si así no queda nadie sin nombre,
-  sin columna); en uno estrecho, en un acordeón cerrado que se cierra al elegir un agente
-  (critique F7: 24 de 25 bloques eran anónimos). Clic o Enter → vista de juicio del agente; al
-  volver, foco en el mismo bloque.
+- **Etiqueta dentro si cabe; si no, lista** (y `<title>` del SVG). Debajo del Flame y a todo el
+  ancho, la lista de todos los agentes **sin nombre visible** (agregados en "N more" y bloques
+  donde la etiqueta no cabe), por valor: descripción (2 líneas) y tipo, una barra relativa al
+  mayor, $ y % de la sesión. En un panel ≥ 640 px, abierta; en uno estrecho, acordeón cerrado que
+  se cierra al elegir un agente. Bloque y fila se resaltan juntos al pasar el puntero o el foco.
+  Historia (critique F7): "solo N more" salía vacía en escritorio; una columna al lado dejaba el
+  gráfico en 348 px; debajo con barras, el Flame recupera los 644 px. Clic o Enter → vista de
+  juicio del agente; al volver, foco en el mismo bloque.
 - **Móvil:** el mismo flame a todo el ancho (sin scroll horizontal) y la leyenda en acordeón.
 - **Layout = función pura** `flameLayout(tree)` (`static/flame.js`) → `[{x, y, w, h, agent_id,
   kind}]`; tests en `tests/flame.test.mjs` (`node --test`, lanzados desde pytest).

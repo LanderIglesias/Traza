@@ -217,6 +217,10 @@ async function renderPanel() {
   else if (ui.tab === "trace") await renderTrace(s);
   else if (ui.tab === "flame") renderFlame(s);
   else renderTree(s);
+  if (ui.scrollPanel && seq === panelSeq) {
+    ui.scrollPanel = false;
+    $("panel").scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }
 }
 
 // --- árbol de agentes (F4) -----------------------------------------------------------------------
@@ -245,12 +249,15 @@ function agentRow(s, n, depth, hasKids) {
     ui.collapsed[open ? "add" : "delete"](key);
     renderTree(s);
   });
-  const desc = n.orphan === "sin_tool_use_id" ? n.task : n.description;
+  // lo que distingue a un agente es su descripción (el tipo se repite: 17 "general-purpose"): va como
+  // nombre y el tipo debajo, en pequeño (critique F7); sin descripción, como antes
+  const title = n.description || name;
+  const desc = n.description ? name : n.orphan === "sin_tool_use_id" ? n.task : null;
   const cell = el("div", { className: "agent-cell" }, toggle,
     el("span", {},
       n.orphan ? el("span", { className: "mark", "data-kind": n.orphan, text: ORPHAN_MARK[n.orphan] }) : null,
-      el("button", { type: "button", className: "agent-name agent-open", text: name,
-        "aria-label": `Open the timeline of ${name}` }),
+      el("button", { type: "button", className: "agent-name agent-open", text: title,
+        "aria-label": `Open the timeline of ${title}${n.description ? ` (${name})` : ""}` }),
       n.alerts ? el("button", { type: "button", className: "badge badge-btn node-alerts",
         title: alertText(n.signals), "aria-label": `${alertText(n.signals)}: show the latest` },
         icon(ALERT), el("span", { text: String(n.alerts) })) : null,
@@ -323,6 +330,9 @@ function select(id) {
   ui.judge = null;
   const s = ui.data?.sessions.find((x) => x.id === id);
   if (s) announce(`${titleOf(s)} selected, ${plural(s.agents, "agent")}`);
+  // apilado (≤ 900 px), el panel queda bajo la lista y tocar una sesión no hacía nada visible; se
+  // desplaza renderPanel cuando el contenido ya está (antes la página aún era corta: solo 246 px)
+  ui.scrollPanel = matchMedia("(max-width: 900px)").matches;
   renderRows(ui.data);
   renderPanel();
 }
@@ -486,9 +496,9 @@ const agentName = (a) => (a.id === "main" ? "Main agent" : a.type || `Agent ${a.
 
 function paintJudge(j, v) {
   const a = v.agent;
-  $("j-title").textContent = agentName(a);
+  $("j-title").textContent = a.description || agentName(a);
   // el encargo ya se ve entero debajo: el subtítulo no lo repite
-  $("j-sub").textContent = a.description || (a.orphan ? ORPHAN_MARK[a.orphan] : "");
+  $("j-sub").textContent = a.description ? agentName(a) : a.orphan ? ORPHAN_MARK[a.orphan] : "";
   $("j-state").replaceWith(Object.assign(pill(a.state), { id: "j-state" }));
   $("j-cost").textContent = money(a.cost, a.unpriced);
   renderSummary(v.summary);
@@ -916,11 +926,12 @@ function svgEl(tag, attrs = {}) {
   for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
   return n;
 }
-// Leyenda = índice de los agentes sin nombre visible en el Flame: agregados en "N more" y bloques
-// donde la etiqueta no cabe (critique F7: 24 de 25 bloques eran anónimos). En un panel ancho va en
-// una columna al lado (el Flame sigue siendo el protagonista, como en Perfetto o DevTools); en uno
-// estrecho, en un acordeón cerrado que se cierra al elegir un agente.
-const FLAME_ASIDE = 280, FLAME_GAP = 16, FLAME_WIDE = 640;
+// Leyenda = lista de los agentes sin nombre visible en el Flame (agregados en "N more" y bloques
+// donde la etiqueta no cabe; critique F7: 24 de 25 bloques eran anónimos), debajo y a todo el
+// ancho, cada uno con su barra: a esta escala, la lista con barras es el flame legible. Al lado
+// dejaba el gráfico en 348 px (2ª pasada del critique). En un panel estrecho, acordeón cerrado que
+// se cierra al elegir un agente. Bloque y fila se resaltan juntos al pasar el puntero o el foco.
+const FLAME_WIDE = 640;
 const fitsIn = (label, w) => label.length * 7 + 12 <= w;
 function renderFlame(s) {
   const box = $("flame-chart");
@@ -936,20 +947,20 @@ function renderFlame(s) {
     : r.kind === "more" ? `${plural(r.n, "more agent")} · ${money(r.cost)}`
     : `${agentName(byId.get(r.agent_id))} · ${money(r.cost)}`;
   const blockW = (r, width) => Math.max(r.w * width - 1, 1);
-  const plan = (width) => {
-    const rects = flameLayout(s.tree, { maxDepth: FLAME_DEPTH, minFrac: FLAME_MIN_PX / width });
-    const unnamed = new Set(rects.filter((r) => r.kind === "more").flatMap((r) => r.ids));
-    for (const r of rects) if (r.kind === "agent" && !fitsIn(labelOf(r), blockW(r, width))) unnamed.add(r.agent_id);
-    return { width, rects, unnamed };
-  };
-  // la columna le quita ancho al Flame, y el ancho decide qué etiquetas caben: se calcula con el
-  // ancho que deja la columna y, si así no queda nadie sin nombre, a ancho completo y sin columna
-  let p = plan(wide ? panel - FLAME_ASIDE - FLAME_GAP : panel);
-  if (wide && !p.unnamed.size) p = plan(panel);
-  const { width, rects, unnamed } = p;
-  const aside = wide && unnamed.size > 0;
+  const width = panel;
+  const rects = flameLayout(s.tree, { maxDepth: FLAME_DEPTH, minFrac: FLAME_MIN_PX / width });
+  const unnamed = new Set(rects.filter((r) => r.kind === "more").flatMap((r) => r.ids));
+  for (const r of rects) if (r.kind === "agent" && !fitsIn(labelOf(r), blockW(r, width))) unnamed.add(r.agent_id);
   const legend = $("flame-more");
-  $("flame-body").classList.toggle("has-aside", aside);
+  // resaltar juntos el bloque del Flame y su fila de la lista (los dos llevan el id del agente)
+  const hot = (aid, on) => {
+    for (const x of document.querySelectorAll(`#flame [data-agent="${CSS.escape(aid)}"]`)) x.classList.toggle("is-hot", on);
+  };
+  const linkHot = (node, aid) => {
+    for (const [ev, on] of [["pointerenter", true], ["pointerleave", false], ["focus", true], ["blur", false]]) {
+      node.addEventListener(ev, () => hot(aid, on));
+    }
+  };
   const unpriced = s.tree.filter((n) => n.cost === null || n.unpriced).length;
   $("flame-note").textContent = unpriced ? ` ${plural(unpriced, "agent")} with requests without a price count only what has one.` : "";
   if (!rects.length) {
@@ -957,7 +968,7 @@ function renderFlame(s) {
     box.replaceChildren(el("p", { className: "sub", text: "No request in this session has a known price: nothing to size." }));
     return;
   }
-  const choose = (aid) => { if (!aside) legend.open = false; openJudge(s.id, aid); };
+  const choose = (aid) => { if (!wide) legend.open = false; openJudge(s.id, aid); };
   const depthOf = new Map(rects.filter((r) => r.agent_id).map((r) => [r.agent_id, r.y]));
   const rows = Math.max(...rects.map((r) => r.y)) + 1;
   const svg = svgEl("svg", { width, height: rows * FLAME_ROW, role: "group", "aria-label": "Agents sized by value at API prices" });
@@ -982,6 +993,7 @@ function renderFlame(s) {
       g.setAttribute("role", "button");
       g.setAttribute("aria-label", tip.replace("\n", ". "));
       g.addEventListener("click", () => choose(r.agent_id));
+      linkHot(g, r.agent_id);
       g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(r.agent_id); } });
     }
     svg.append(g);
@@ -989,19 +1001,24 @@ function renderFlame(s) {
   box.replaceChildren(svg);
   legend.hidden = !unnamed.size;
   if (unnamed.size) {
-    // al lado: siempre abierta (es el índice); en acordeón: cerrada salvo que el usuario la abriera
-    legend.open = aside || (legend.dataset.sid === s.id && legend.open);
+    // panel ancho: abierta; estrecho: acordeón cerrado salvo que el usuario lo abriera
+    legend.open = legend.dataset.sid === s.id ? legend.open : wide;
     legend.dataset.sid = s.id;
     $("flame-more-h").textContent = `${plural(unnamed.size, "agent")} without a visible name`;
     const list = [...unnamed].map((id) => byId.get(id)).sort((a, b) => (b.total?.cost || 0) - (a.total?.cost || 0));
+    const top = list[0]?.total?.cost || 1;
     $("flame-more-list").replaceChildren(...list.map((n) => {
-      const row = el("button", { type: "button", className: "flame-more-row" },
+      const bar = el("span", { className: "bar", "aria-hidden": "true" }, el("i"));
+      bar.firstChild.style.width = `${((n.total?.cost || 0) / top) * 100}%`;   // relativa al mayor; el % dice la parte de la sesión
+      const row = el("button", { type: "button", className: "flame-more-row", "data-agent": n.id },
         // lo que distingue a un agente es su descripción (el tipo se repite: 17 "general-purpose")
         el("span", { className: "who" }, el("b", { text: n.description || agentName(n) }),
           ...(n.description ? [el("span", { text: agentName(n) })] : [])),
+        bar,
         el("span", { className: "num", text: money(n.total?.cost ?? null, n.total?.unpriced) }),
         el("span", { className: "pct", text: pct((n.total?.cost || 0) / rects[0].cost) }));
       row.addEventListener("click", () => choose(n.id));
+      linkHot(row, n.id);
       return el("li", {}, row);
     }));
   }
