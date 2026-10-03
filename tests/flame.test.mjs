@@ -52,6 +52,7 @@ test("profundidad excedida: un rectángulo 'N more' con todo lo de debajo", () =
   const more = rects.filter((x) => x.kind === "more");
   assert.equal(more.length, 1);
   assert.equal(more[0].n, 2);                                          // b y su hijo c
+  assert.deepEqual(more[0].ids, ["b"]);                                // la leyenda lista b (c va dentro)
   near(more[0].w, 0.5);
   assert.ok(!byId(rects).b && !byId(rects).c);
 });
@@ -62,6 +63,7 @@ test("hermanos por debajo del ancho mínimo se agregan en 'N more'", () => {
   const more = rects.filter((x) => x.kind === "more");
   assert.equal(more.length, 1);
   assert.equal(more[0].n, 2);
+  assert.deepEqual(more[0].ids, ["s1", "s2"]);                         // los que no caben, para la leyenda
   near(more[0].w, 0.02);
 });
 

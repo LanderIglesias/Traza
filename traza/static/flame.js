@@ -43,9 +43,10 @@ export function flameLayout(tree, { maxDepth = 8, minFrac = 0.004 } = {}) {
     for (const k of placed) {
       const w = sub.get(k.id) / total;
       if (y > maxDepth || w < minFrac) {
-        more ||= { kind: "more", y, h: 1, agent_id: null, parent_id: pid, cost: 0, n: 0 };
+        more ||= { kind: "more", y, h: 1, agent_id: null, parent_id: pid, cost: 0, n: 0, ids: [] };
         more.cost += sub.get(k.id);
         more.n += count.get(k.id);
+        more.ids.push(k.id);                  // los agregados, para la leyenda (sus hijos van dentro)
         continue;
       }
       rects.push({ kind: "agent", x, y, w, h: 1, agent_id: k.id, parent_id: pid, cost: sub.get(k.id), own: k.cost || 0 });

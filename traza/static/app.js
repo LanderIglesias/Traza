@@ -7,7 +7,9 @@ const $ = (id) => document.getElementById(id);
 const SVG_NS = "http://www.w3.org/2000/svg";   // identificador del estándar, no una petición
 const STATE_LABEL = { tool: "Running tool", thinking: "Thinking", idle: "Idle", done: "Done" };
 // collapsed: "sesión/agente" plegados; sobrevive a los re-render de cada tick SSE (F4)
-const ui = { data: null, filter: "all", selected: null, collapsed: new Set(), sort: null, tab: "tree" };
+// orden por defecto: valor incluidos subagentes, mayor primero ("¿quién gasta?" de un vistazo,
+// critique F7); se puede quitar con un tercer clic y vuelve el orden de inicio
+const ui = { data: null, filter: "all", selected: null, collapsed: new Set(), sort: { key: "total", dir: -1 }, tab: "tree" };
 const ORPHAN_MARK = { sin_tool_use_id: "skill fork", padre_no_encontrado: "parent unknown" };
 
 // --- formato ---------------------------------------------------------------------------------
@@ -959,6 +961,21 @@ function renderFlame(s) {
     svg.append(g);
   }
   box.replaceChildren(svg);
+  // leyenda: solo los agentes que no caben como bloque (agregados en "N more"), por valor
+  const small = rects.filter((r) => r.kind === "more").flatMap((r) => r.ids).map((id) => byId.get(id))
+    .sort((a, b) => (b.total?.cost || 0) - (a.total?.cost || 0));
+  $("flame-more").hidden = !small.length;
+  $("flame-more").replaceChildren(...(small.length ? [
+    el("h4", { id: "flame-more-h", text: `Too small to draw as a block: ${plural(small.length, "agent")} (with their subagents)` }),
+    el("ol", {}, ...small.map((n) => {
+      const v = n.total?.cost || 0;
+      const row = el("button", { type: "button", className: "flame-more-row" },
+        el("span", { className: "who" }, el("b", { text: agentName(n) }), ...(n.description ? [el("span", { text: ` · ${n.description}` })] : [])),
+        el("span", { className: "num", text: money(n.total?.cost ?? null, n.total?.unpriced) }),
+        el("span", { className: "pct", text: pct(v / rects[0].cost) }));
+      row.addEventListener("click", () => openJudge(s.id, n.id));
+      return el("li", {}, row);
+    }))] : []));
   box.dataset.rects = String(rects.length);
   box.dataset.renderMs = (performance.now() - t0).toFixed(1);
 }

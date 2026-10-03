@@ -20,7 +20,10 @@
   --night-2: #a9adba;        /* secundario sobre --night: 8:1 */
   --coral-a: #d93a26;
   --coral-b: #b51f4a;        /* blanco sobre ambos extremos ≥ 5:1 */
-  --tool-bg: #e7eeff;  --tool: #2349c0;
+  /* herramientas = ámbar ("en curso"), lejos del morado del modelo (critique F7: azul y morado se
+     confundían en barras finas); las partes del valor tienen su propia gama */
+  --tool-bg: #fdefd9;  --tool: #9a5200;
+  --val-read: #7b8496;  --val-write: #0e7c86;
   --selection-bg: #ffd6cf;  --scroll: #c9cdd6;
   --fl-0: #f4c7bb; --fl-1: #f2dca6; --fl-2: #c8d6f6; --fl-3: #dccbf3; --fl-4: #c3e4d2;
   --think-bg: #eee9ff; --think: #5638c2;
@@ -53,7 +56,8 @@
   --selected: #262a33;
   --night: #24272f;
   --night-2: #b4b9c6;
-  --tool-bg: #1c2a4a;  --tool: #9db8ff;
+  --tool-bg: #3a2a12;  --tool: #f3b469;
+  --val-read: #8d96a8;  --val-write: #4fc3c0;
   --selection-bg: #6a3b33;  --scroll: #3a3f4b;
   --fl-0: #6a3b33; --fl-1: #5b4a23; --fl-2: #2d416c; --fl-3: #46356a; --fl-4: #2b5340;
   --think-bg: #2a2447; --think: #bfaeff;
@@ -77,7 +81,8 @@
     --selected: #262a33;
     --night: #24272f;
     --night-2: #b4b9c6;
-    --tool-bg: #1c2a4a;  --tool: #9db8ff;
+    --tool-bg: #3a2a12;  --tool: #f3b469;
+    --val-read: #8d96a8;  --val-write: #4fc3c0;
     --selection-bg: #6a3b33;  --scroll: #3a3f4b;
     --fl-0: #6a3b33; --fl-1: #5b4a23; --fl-2: #2d416c; --fl-3: #46356a; --fl-4: #2b5340;
     --think-bg: #2a2447; --think: #bfaeff;
@@ -287,6 +292,8 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .tree th[aria-sort] button { color: var(--ink); }
 .tree th[aria-sort="descending"] button::after { content: " ↓"; }
 .tree th[aria-sort="ascending"] button::after { content: " ↑"; }
+/* las cabeceras ordenables se ven ordenables antes de pulsarlas (critique F7) */
+.tree th[data-sort]:not([aria-sort]) button::after { content: " ↕"; color: var(--ink-3); }
 .tree td { padding: 9px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .tree .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tree td.num { font-weight: 600; }
@@ -342,8 +349,8 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .j-pre[data-state="unavailable"] { color: var(--ink-3); font-style: italic; }
 .j-pre[data-state="truncated"]::after { content: "\A— truncated to 20,000 characters"; color: var(--ink-3); }
 .j-earlier {
-  width: fit-content; font: inherit; font-size: 13px; font-weight: 700; color: var(--tool);
-  background: var(--tool-bg); border: 0; border-radius: 999px; padding: 5px 12px; cursor: pointer;
+  width: fit-content; font: inherit; font-size: 13px; font-weight: 700; color: var(--ink);
+  background: var(--sunk); border: 0; border-radius: 999px; padding: 5px 12px; cursor: pointer;
 }
 .timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .timeline details { border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--card); }
@@ -495,7 +502,7 @@ button.trace-bar { cursor: pointer; }
 .stack-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .stack-legend b { color: var(--ink); font-weight: 600; }
 .k-model { background: var(--think); }  .k-tool { background: var(--tool); }  .k-user { background: var(--ink-3); }
-.k-cache_read { background: var(--tool); } .k-cache_write { background: var(--think); }
+.k-cache_read { background: var(--val-read); } .k-cache_write { background: var(--val-write); }
 .k-output { background: var(--coral-a); } .k-input { background: var(--ink-3); } .k-web_search { background: var(--ok); }
 .j-summary { display: flex; flex-direction: column; gap: 12px; }
 .breakdown h4 { margin: 0; font-size: 13px; font-weight: 700; color: var(--ink-2); }
@@ -517,6 +524,21 @@ button.trace-bar { cursor: pointer; }
 .fl-agent { cursor: pointer; }
 .fl-agent:hover rect, .fl-agent:focus-visible rect { stroke: var(--focus); stroke-width: 2; }
 .fl-agent:focus { outline: none; }
+/* leyenda: solo los agentes que no caben como bloque (critique F7) */
+.flame-more { display: flex; flex-direction: column; gap: 6px; }
+.flame-more h4 { margin: 0; font-size: 13px; font-weight: 700; color: var(--ink-2); }
+.flame-more ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.flame-more-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 12px; align-items: baseline;
+  width: 100%; text-align: left; font: inherit; font-size: 13px; color: var(--ink);
+  background: none; border: 0; border-radius: 8px; padding: 6px 8px; cursor: pointer;
+}
+.flame-more-row:hover { background: var(--sunk); }
+.flame-more-row .who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flame-more-row .who b { font-weight: 600; }
+.flame-more-row .who span { color: var(--ink-2); }
+.flame-more-row .num { font-variant-numeric: tabular-nums; font-weight: 600; }
+.flame-more-row .pct { font-variant-numeric: tabular-nums; color: var(--ink-2); min-width: 4.5em; text-align: right; }
 
 /* móvil (plan F6.5, punto 2): la Gantt se apila — el nombre arriba, la barra a todo el ancho */
 @media (max-width: 640px) {
