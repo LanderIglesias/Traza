@@ -92,7 +92,7 @@ function renderCards(d) {
   if (live.length) {
     const s = live[0];                                    // la viva más reciente
     $("live-status").textContent = "Live now";
-    $("live-title").textContent = titleOf(s);
+    $("live-title").textContent = $("live-title").title = titleOf(s);
     $("live-detail").textContent = s.activity
       ? `${s.activity.agent} · ${toolLabel(s.activity.tool)} · ${since(s.activity.since)}`
       : `${STATE_LABEL[s.state]} · ${s.project}`;
@@ -101,7 +101,8 @@ function renderCards(d) {
   } else {
     const last = d.sessions[0];
     $("live-status").textContent = "Nothing running";
-    $("live-title").textContent = last ? `Last active: ${titleOf(last)}` : "No sessions on disk yet";
+    // title: en móvil el texto se corta con "…"; así se puede leer entero
+    $("live-title").textContent = $("live-title").title = last ? `Last active: ${titleOf(last)}` : "No sessions on disk yet";
     $("live-detail").textContent = last ? `${ago(last.last_activity)} · ${last.project}` : "";
     more.hidden = true;
   }
@@ -674,7 +675,9 @@ function stackBar(label, rows) {
     "aria-label": `${label}: ` + rows.map((r) => `${r[1]} ${r[3]}`).join(", ") },
     ...rows.filter((r) => r[2] > 0).map((r) => {
       const s = el("span", { className: `k-${r[0]}`, title: `${r[1]}: ${r[3]}` });
-      s.style.flex = `${r[2]} 1 0`;
+      // proporción del total: con valores que sumaban < 1 (un total de $0.07) la barra quedaba
+      // casi vacía, porque flex-grow solo reparte esa fracción del espacio (critique F7)
+      s.style.flex = `${r[2] / total} 1 0`;
       return s;
     }));
   const pct = (v) => (total ? `${Math.round((v / total) * 100)} %` : "");
