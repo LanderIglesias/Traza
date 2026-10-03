@@ -209,6 +209,10 @@ async function renderPanel() {
   $("trace").hidden = judging || ui.tab !== "trace";
   $("flame").hidden = judging || ui.tab !== "flame";
   $("judge").hidden = !judging;
+  // el foco al abrir un agente, lo pone la llamada que de verdad muestra la vista: enfocar un
+  // botón aún oculto lo dejaba en <body>, y una llamada más nueva puede adelantarse a la del clic
+  // (critique F7; 1 de 8 arranques fallaba con .then() tras renderPanel)
+  if (judging && ui.judge.focusBack) { ui.judge.focusBack = false; $("j-back").focus(); }
   if (judging) renderJudge();
   else if (ui.tab === "trace") await renderTrace(s);
   else if (ui.tab === "flame") renderFlame(s);
@@ -434,7 +438,7 @@ const PROMPT_LABEL = { human: "Prompt", "task-notification": "Notification", met
 let judgeSeq = 0;
 
 function openJudge(sid, aid, focusEvent = null) {
-  ui.judge = { sid, aid, from: null, sig: "", open: new Map(), focus: focusEvent };
+  ui.judge = { sid, aid, from: null, sig: "", open: new Map(), focus: focusEvent, focusBack: true };
   announce("Agent detail opened");
   // nada del agente anterior mientras llega el nuevo
   for (const id of ["j-title", "j-sub", "j-cost", "j-count"]) $(id).textContent = "";
@@ -442,7 +446,6 @@ function openJudge(sid, aid, focusEvent = null) {
   setContentId($("j-result"), null);
   $("j-items").replaceChildren();
   renderPanel();
-  $("j-back").focus();
 }
 $("j-back").addEventListener("click", () => {
   const aid = ui.judge?.aid;

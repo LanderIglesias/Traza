@@ -23,7 +23,7 @@
   /* herramientas = ámbar ("en curso"), lejos del morado del modelo (critique F7: azul y morado se
      confundían en barras finas); las partes del valor tienen su propia gama */
   --tool-bg: #fdefd9;  --tool: #9a5200;
-  --val-read: #7b8496;  --val-write: #0e7c86;
+  --val-read: #7b8496;  --val-write: #0e7c86;  --val-input: #3c4a63;
   --selection-bg: #ffd6cf;  --scroll: #c9cdd6;
   --fl-0: #f4c7bb; --fl-1: #f2dca6; --fl-2: #c8d6f6; --fl-3: #dccbf3; --fl-4: #c3e4d2;
   --think-bg: #eee9ff; --think: #5638c2;
@@ -57,7 +57,7 @@
   --night: #24272f;
   --night-2: #b4b9c6;
   --tool-bg: #3a2a12;  --tool: #f3b469;
-  --val-read: #8d96a8;  --val-write: #4fc3c0;
+  --val-read: #8d96a8;  --val-write: #4fc3c0;  --val-input: #c5ccda;
   --selection-bg: #6a3b33;  --scroll: #3a3f4b;
   --fl-0: #6a3b33; --fl-1: #5b4a23; --fl-2: #2d416c; --fl-3: #46356a; --fl-4: #2b5340;
   --think-bg: #2a2447; --think: #bfaeff;
@@ -82,7 +82,7 @@
     --night: #24272f;
     --night-2: #b4b9c6;
     --tool-bg: #3a2a12;  --tool: #f3b469;
-    --val-read: #8d96a8;  --val-write: #4fc3c0;
+    --val-read: #8d96a8;  --val-write: #4fc3c0;  --val-input: #c5ccda;
     --selection-bg: #6a3b33;  --scroll: #3a3f4b;
     --fl-0: #6a3b33; --fl-1: #5b4a23; --fl-2: #2d416c; --fl-3: #46356a; --fl-4: #2b5340;
     --think-bg: #2a2447; --think: #bfaeff;
@@ -511,7 +511,7 @@ button.trace-bar { cursor: pointer; }
 .stack-legend b { color: var(--ink); font-weight: 600; }
 .k-model { background: var(--think); }  .k-tool { background: var(--tool); }  .k-user { background: var(--ink-3); }
 .k-cache_read { background: var(--val-read); } .k-cache_write { background: var(--val-write); }
-.k-output { background: var(--coral-a); } .k-input { background: var(--ink-3); } .k-web_search { background: var(--ok); }
+.k-output { background: var(--coral-a); } .k-input { background: var(--val-input); }   /* era el mismo gris que las lecturas de caché (1,04:1) */ .k-web_search { background: var(--ok); }
 .j-summary { display: flex; flex-direction: column; gap: 12px; }
 .breakdown h4 { margin: 0; font-size: 13px; font-weight: 700; color: var(--ink-2); }
 
@@ -549,7 +549,9 @@ button.trace-bar { cursor: pointer; }
 }
 .flame-more-row:hover { background: var(--sunk); }
 .flame-more-row .who { min-width: 0; display: flex; flex-direction: column; }
-.flame-more-row .who b, .flame-more-row .who span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flame-more-row .who span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* la descripción es lo que distingue a un agente: hasta dos líneas antes de cortarse */
+.flame-more-row .who b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .flame-more-row .who b { font-weight: 600; }
 .flame-more-row .who span { color: var(--ink-2); font-size: 12px; }
 .flame-more-row .num { font-variant-numeric: tabular-nums; font-weight: 600; }
