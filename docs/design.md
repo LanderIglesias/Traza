@@ -652,14 +652,19 @@ con 40 agentes del mismo tipo las etiquetas no distinguen, el **ancho** sí.
 - **Agregados:** hijos de menos de 3 px o más hondos que 8 niveles se juntan en un bloque "N more
   agents" (N cuenta también sus descendientes). El mínimo es en píxeles: en móvil se agrega más.
 - **Colores por profundidad** (5 tokens que se repiten, claro y oscuro), no por tipo ni estado.
-- **Etiqueta dentro si cabe; si no, lista** (y `<title>` del SVG). Debajo del Flame y a todo el
-  ancho, la lista de todos los agentes **sin nombre visible** (agregados en "N more" y bloques
-  donde la etiqueta no cabe), por valor: descripción (2 líneas) y tipo, una barra relativa al
-  mayor, $ y % de la sesión. En un panel ≥ 640 px, abierta; en uno estrecho, acordeón cerrado que
-  se cierra al elegir un agente. Bloque y fila se resaltan juntos al pasar el puntero o el foco.
-  Historia (critique F7): "solo N more" salía vacía en escritorio; una columna al lado dejaba el
-  gráfico en 348 px; debajo con barras, el Flame recupera los 644 px. Clic o Enter → vista de
-  juicio del agente; al volver, foco en el mismo bloque.
+- **Cabecera de jerarquía (revisión de F7), no un flame bloque a bloque:** con 25 agentes, 24
+  bloques de 22–30 px sin nombre no decían nada que no diga la lista. El gráfico se queda solo con
+  lo que el árbol no enseña: **la proporción propio frente a delegado** (las hojas hermanas, sin
+  subagentes propios, van en un bloque "24 subagents · $4.49 · 57.1 %" junto a "own work · 43 %")
+  y **la anidación** (quien lanza otros conserva su bloque y su nivel). La fila "Session" se quita
+  cuando solo repite al único agente de arriba. Las etiquetas se acortan antes de perderse y el
+  porcentaje es lo último en irse (`flameLayout(..., { groupLeaves: true })`, con tests).
+- **Lista con barras debajo, a todo el ancho:** los agentes de dentro de esos bloques (y los que no
+  caben con etiqueta), por valor: descripción (2 líneas) y tipo, barra relativa al mayor, $ y %
+  de la sesión. Panel ≥ 640 px: abierta; estrecho: acordeón cerrado que se cierra al elegir un
+  agente. Bloque y fila se resaltan juntos; pulsar el bloque de grupo abre la lista. Historia:
+  "solo N more" salía vacía; una columna al lado dejaba el gráfico en 348 px; los bloques sueltos
+  no se podían nombrar. Clic o Enter en un agente → vista de juicio; al volver, foco en el bloque.
 - **Móvil:** el mismo flame a todo el ancho (sin scroll horizontal) y la leyenda en acordeón.
 - **Layout = función pura** `flameLayout(tree)` (`static/flame.js`) → `[{x, y, w, h, agent_id,
   kind}]`; tests en `tests/flame.test.mjs` (`node --test`, lanzados desde pytest).

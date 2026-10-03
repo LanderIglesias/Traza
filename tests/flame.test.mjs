@@ -85,6 +85,30 @@ test("un ciclo de padres (meta.json mal o manipulado) no hace desaparecer agente
   invariants(cycle, rects);
 });
 
+test("cabecera de jerarquía: las hojas hermanas se juntan en un bloque; quien tiene hijos sigue suelto", () => {
+  // revisión del Flame (F7): 24 bloques sin nombre no decían nada que no diga la lista; lo que el
+  // gráfico aporta es la proporción propio/delegado y la anidación más allá del primer salto
+  const tree = [node("main", 3), node("a", 1, "main"), node("b", 1, "main"), node("c", 2, "main"), node("c1", 1, "c")];
+  const rects = flameLayout(tree, { groupLeaves: true });
+  const groups = rects.filter((r) => r.kind === "group");
+  assert.equal(groups.length, 1);
+  assert.deepEqual(groups[0].ids, ["a", "b"]);
+  assert.equal(groups[0].n, 2);
+  near(groups[0].w, 2 / 8);
+  near(byId(rects).c.w, 3 / 8);                                        // tiene hijos: bloque propio
+  assert.ok(!byId(rects).a && !byId(rects).b);
+  assert.ok(byId(rects).c1);                                           // hoja única: no hace falta agrupar
+  invariants(tree, rects);
+});
+
+test("cabecera de jerarquía: si todos los hijos son hojas, el trabajo propio sigue a la vista", () => {
+  const rects = flameLayout([node("main", 2), node("a", 1, "main"), node("b", 1, "main")], { groupLeaves: true });
+  const own = rects.filter((r) => r.kind === "own");
+  assert.equal(own.length, 1);                                         // propio 50 % frente a delegado 50 %
+  near(own[0].w, 0.5);
+  near(rects.find((r) => r.kind === "group").w, 0.5);
+});
+
 // Invariantes sobre un árbol real (la fixture servida por la API): todo cabe y suma el total.
 function invariants(tree, rects) {
   const total = tree.reduce((a, n) => a + (n.cost || 0), 0);
@@ -92,7 +116,7 @@ function invariants(tree, rects) {
   near(root.cost, total);
   // el área "terminal" (hojas + coste propio + agregados) es el 100 % exacto
   const parents = new Set(rects.filter((x) => x.kind !== "root").map((x) => x.parent_id));
-  const terminal = rects.filter((x) => x.kind === "own" || x.kind === "more"
+  const terminal = rects.filter((x) => x.kind === "own" || x.kind === "more" || x.kind === "group"
     || (x.kind === "agent" && !parents.has(x.agent_id)));
   near(terminal.reduce((a, x) => a + x.w, 0), 1);
   for (const x of rects) {
@@ -108,4 +132,5 @@ test("árbol real: suma 100 %, nada se sale de su padre, raíz = total de la ses
   assert.ok(tree.length >= 2);
   invariants(tree, flameLayout(tree));
   invariants(tree, flameLayout(tree, { maxDepth: 1, minFrac: 0.3 }));  // también con agregados
+  invariants(tree, flameLayout(tree, { groupLeaves: true }));          // y como cabecera de jerarquía
 });

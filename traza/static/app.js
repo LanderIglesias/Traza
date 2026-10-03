@@ -942,19 +942,30 @@ function renderFlame(s) {
   flameSig = sig;
   const t0 = performance.now();
   const byId = new Map(s.tree.map((n) => [n.id, n]));
-  const labelOf = (r) => r.kind === "root" ? `Session · ${money(r.cost)}`
-    : r.kind === "own" ? `own work · ${money(r.cost)}`
-    : r.kind === "more" ? `${plural(r.n, "more agent")} · ${money(r.cost)}`
-    : `${agentName(byId.get(r.agent_id))} · ${money(r.cost)}`;
+  const pct = (w) => `${(w * 100).toFixed(w < 0.01 ? 2 : 1)} %`;
   const blockW = (r, width) => Math.max(r.w * width - 1, 1);
   const width = panel;
-  const rects = flameLayout(s.tree, { maxDepth: FLAME_DEPTH, minFrac: FLAME_MIN_PX / width });
-  const unnamed = new Set(rects.filter((r) => r.kind === "more").flatMap((r) => r.ids));
+  // cabecera de jerarquía (revisión del Flame, F7): solo lo que el árbol no enseña. Las hojas
+  // hermanas van en un bloque (la proporción propio/delegado de un vistazo) y quien tiene hijos
+  // sigue suelto (la anidación); la lista de debajo identifica a cada uno.
+  let rects = flameLayout(s.tree, { maxDepth: FLAME_DEPTH, minFrac: FLAME_MIN_PX / width, groupLeaves: true });
+  const sessionCost = rects[0]?.cost;
+  // la fila "Session" solo repetía al agente principal cuando es el único de arriba: fuera
+  if (rects.filter((r) => r.y === 1).length === 1) rects = rects.filter((r) => r.kind !== "root").map((r) => ({ ...r, y: r.y - 1 }));
+  const costOf = new Map(rects.filter((r) => r.agent_id).map((r) => [r.agent_id, r.cost]));
+  const shareOfParent = (r) => pct(r.cost / (costOf.get(r.parent_id) ?? sessionCost));
+  const labelOf = (r) => r.kind === "root" ? `Session · ${money(r.cost)}`
+    : r.kind === "own" ? `own work · ${money(r.cost)} · ${shareOfParent(r)}`
+    : r.kind === "group" ? `${plural(r.n, "subagent")} · ${money(r.cost)} · ${shareOfParent(r)}`
+    : r.kind === "more" ? `${plural(r.n, "more agent")} · ${money(r.cost)}`
+    : `${agentName(byId.get(r.agent_id))} · ${money(r.cost)}`;
+  const unnamed = new Set(rects.filter((r) => r.kind === "more" || r.kind === "group").flatMap((r) => r.ids));
   for (const r of rects) if (r.kind === "agent" && !fitsIn(labelOf(r), blockW(r, width))) unnamed.add(r.agent_id);
   const legend = $("flame-more");
   // resaltar juntos el bloque del Flame y su fila de la lista (los dos llevan el id del agente)
   const hot = (aid, on) => {
-    for (const x of document.querySelectorAll(`#flame [data-agent="${CSS.escape(aid)}"]`)) x.classList.toggle("is-hot", on);
+    const id = CSS.escape(aid);
+    for (const x of document.querySelectorAll(`#flame [data-agent="${id}"], #flame [data-ids~="${id}"]`)) x.classList.toggle("is-hot", on);
   };
   const linkHot = (node, aid) => {
     for (const [ev, on] of [["pointerenter", true], ["pointerleave", false], ["focus", true], ["blur", false]]) {
@@ -972,20 +983,24 @@ function renderFlame(s) {
   const depthOf = new Map(rects.filter((r) => r.agent_id).map((r) => [r.agent_id, r.y]));
   const rows = Math.max(...rects.map((r) => r.y)) + 1;
   const svg = svgEl("svg", { width, height: rows * FLAME_ROW, role: "group", "aria-label": "Agents sized by value at API prices" });
-  const pct = (w) => `${(w * 100).toFixed(w < 0.01 ? 2 : 1)} %`;
   for (const r of rects) {
     const n = r.agent_id && byId.get(r.agent_id);
     const depth = r.kind === "own" ? depthOf.get(r.parent_id) : r.y;   // el coste propio, del color de su agente
     const label = labelOf(r);
     const tip = r.kind === "agent"
       ? `${agentName(n)}${n.description ? ` — ${n.description}` : ""}\n${money(r.cost)} incl. subagents (${pct(r.w)} of the session) · own ${money(r.own)}`
-      : `${label} (${pct(r.w)} of the session)`;
+      : `${label} (${pct(r.cost / sessionCost)} of the session)`;
     const g = svgEl("g", { class: `fl fl-${r.kind} fl-d${(depth ?? 0) % 5}` });
     const x = r.x * width, w = blockW(r, width), y = r.y * FLAME_ROW;
     g.append(svgEl("rect", { x, y, width: w, height: FLAME_ROW - 2, rx: 4 }));
     const title = svgEl("title"); title.textContent = tip; g.append(title);
-    if (fitsIn(label, w)) {                                   // la etiqueta, solo si cabe; si no, leyenda
-      const t = svgEl("text", { x: x + 6, y: y + FLAME_ROW / 2 + 3 }); t.textContent = label; g.append(t);
+    // la etiqueta, solo si cabe; en grupo y propio se acorta antes de perderse, y el porcentaje es
+    // lo último en irse (es lo que esta cabecera aporta: propio frente a delegado)
+    const share = r.kind === "group" || r.kind === "own" ? shareOfParent(r) : null;
+    const fit = [label, ...(r.kind === "group" ? [`${plural(r.n, "subagent")} · ${share}`, share]
+      : r.kind === "own" ? [`own · ${share}`, share] : [])].find((o) => fitsIn(o, w));
+    if (fit) {
+      const t = svgEl("text", { x: x + 6, y: y + FLAME_ROW / 2 + 3 }); t.textContent = fit; g.append(t);
     }
     if (r.kind === "agent") {
       g.dataset.agent = r.agent_id;
@@ -996,6 +1011,15 @@ function renderFlame(s) {
       linkHot(g, r.agent_id);
       g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(r.agent_id); } });
     }
+    if (r.kind === "group") {                      // el bloque de hojas lleva a su lista
+      g.dataset.ids = r.ids.join(" ");
+      g.setAttribute("tabindex", "0");
+      g.setAttribute("role", "button");
+      g.setAttribute("aria-label", `${label}: show them in the list below`);
+      const show = () => { legend.open = true; legend.scrollIntoView({ block: "nearest" }); };
+      g.addEventListener("click", show);
+      g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); show(); } });
+    }
     svg.append(g);
   }
   box.replaceChildren(svg);
@@ -1004,7 +1028,7 @@ function renderFlame(s) {
     // panel ancho: abierta; estrecho: acordeón cerrado salvo que el usuario lo abriera
     legend.open = legend.dataset.sid === s.id ? legend.open : wide;
     legend.dataset.sid = s.id;
-    $("flame-more-h").textContent = `${plural(unnamed.size, "agent")} without a visible name`;
+    $("flame-more-h").textContent = `${plural(unnamed.size, "agent")} inside the blocks above, by value`;
     const list = [...unnamed].map((id) => byId.get(id)).sort((a, b) => (b.total?.cost || 0) - (a.total?.cost || 0));
     const top = list[0]?.total?.cost || 1;
     $("flame-more-list").replaceChildren(...list.map((n) => {
@@ -1016,7 +1040,7 @@ function renderFlame(s) {
           ...(n.description ? [el("span", { text: agentName(n) })] : [])),
         bar,
         el("span", { className: "num", text: money(n.total?.cost ?? null, n.total?.unpriced) }),
-        el("span", { className: "pct", text: pct((n.total?.cost || 0) / rects[0].cost) }));
+        el("span", { className: "pct", text: pct((n.total?.cost || 0) / sessionCost) }));
       row.addEventListener("click", () => choose(n.id));
       linkHot(row, n.id);
       return el("li", {}, row);

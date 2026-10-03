@@ -529,7 +529,9 @@ button.trace-bar { cursor: pointer; }
 .fl-own text { font-weight: 500; fill: var(--ink-2); }
 .fl-more rect { fill: var(--sunk); stroke: var(--ink-3); stroke-dasharray: 2 2; }
 .fl-more text { fill: var(--ink-2); font-weight: 500; }
-.fl-agent { cursor: pointer; }
+.fl-agent, .fl-group { cursor: pointer; }
+.fl-group:focus { outline: none; }
+.fl-group:hover rect, .fl-group:focus-visible rect { stroke: var(--focus); stroke-width: 2; }
 .fl-agent:hover rect, .fl-agent:focus-visible rect { stroke: var(--focus); stroke-width: 2; }
 .fl-agent:focus { outline: none; }
 /* lista de los agentes sin nombre visible, debajo del Flame y con barras (critique F7) */

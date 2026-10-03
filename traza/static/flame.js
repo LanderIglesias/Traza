@@ -2,9 +2,10 @@
 // el de sus descendientes. Función pura, sin DOM (la prueban tests/flame.test.mjs).
 //   x, w: fracciones del valor de la sesión (0..1)   y: fila (0 = la sesión, 1 = sus agentes…)
 //   kind: "root" | "agent" | "own" (el hueco que dejan los hijos: coste propio del padre) |
-//         "more" (n agentes agregados: por debajo de minFrac o más hondos que maxDepth)
+//         "more" (n agentes agregados: por debajo de minFrac o más hondos que maxDepth) |
+//         "group" (con groupLeaves: n hojas hermanas en un bloque; ids para la lista)
 // Un agente sin precio cuenta 0 (el panel ya lo marca con "+" en el árbol).
-export function flameLayout(tree, { maxDepth = 8, minFrac = 0.004 } = {}) {
+export function flameLayout(tree, { maxDepth = 8, minFrac = 0.004, groupLeaves = false } = {}) {
   const ids = new Set(tree.map((n) => n.id));
   const kids = new Map([[null, []]]);
   for (const n of tree) {
@@ -39,6 +40,18 @@ export function flameLayout(tree, { maxDepth = 8, minFrac = 0.004 } = {}) {
     const placed = children.get(parent?.id ?? null).filter((k) => sub.get(k.id) > 0)
       .sort((a, b) => sub.get(b.id) - sub.get(a.id));
     const pid = parent?.id ?? null;
+    // cabecera de jerarquía: las hojas hermanas (sin hijos con valor) van en un solo bloque, que es
+    // la proporción delegada de un vistazo; quien tiene hijos sigue suelto, porque su anidación es
+    // lo que el árbol no enseña. Con una sola hoja no hace falta agrupar.
+    let group = null;
+    if (groupLeaves) {
+      const leaves = placed.filter((k) => !children.get(k.id).some((c) => sub.get(c.id) > 0));
+      if (leaves.length >= 2) {
+        group = { kind: "group", y, h: 1, agent_id: null, parent_id: pid, n: leaves.length,
+                  ids: leaves.map((k) => k.id), cost: leaves.reduce((a, k) => a + sub.get(k.id), 0) };
+        placed.splice(0, placed.length, ...placed.filter((k) => !group.ids.includes(k.id)));
+      }
+    }
     let more = null;
     for (const k of placed) {
       const w = sub.get(k.id) / total;
@@ -53,8 +66,9 @@ export function flameLayout(tree, { maxDepth = 8, minFrac = 0.004 } = {}) {
       place(k, x, y + 1);
       x += w;
     }
+    if (group) { rects.push({ ...group, x, w: group.cost / total }); x += group.cost / total; }
     if (more) { rects.push({ ...more, x, w: more.cost / total }); x += more.cost / total; }
-    if (parent && placed.length && parent.cost > 0) {
+    if (parent && (placed.length || group) && parent.cost > 0) {
       rects.push({ kind: "own", x, y, w: parent.cost / total, h: 1, agent_id: null, parent_id: pid, cost: parent.cost });
     }
   };

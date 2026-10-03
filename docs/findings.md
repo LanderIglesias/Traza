@@ -614,3 +614,21 @@ Regeneradas con el código actual (PARSER 15), reconstruyendo la caché en frío
      anonimato venía de no tener etiqueta, no de estar agregado. Se paró y se cambió;
   5. GIF y captura regrabados. Al regrabar: las flechas ↕ en cada cabecera desbordaban la tabla
      con la pastilla "Running tool" → subrayado punteado (sin ancho).
+
+## F7 — critique, segunda pasada y cabecera de jerarquía (03-10-2026)
+
+- **Re-lanzado tras los 5 pasos: 25 → 26/40.** Detector sin hallazgos nuevos; todos los colores
+  nuevos ≥ 3:1 en los dos temas. Encontró un fallo antiguo (foco perdido al abrir un agente:
+  carrera con los ticks; el primer arreglo con `.then()` fallaba 1 de 8 arranques, el definitivo
+  enfoca desde la llamada que muestra la vista: 12 de 12) y una regresión de la pasada de color
+  (Input y lecturas de caché el mismo gris, 1,04:1).
+- **Abiertos arreglados:** descripción como titular del agente (árbol, vista, aria-label); en
+  móvil, desplazar al panel tras pintarlo (el primer intento solo bajaba 246 px: la página aún
+  era corta); Output en frambuesa (no el coral de error); texto pequeño esencial a `--ink-2`;
+  tarjeta negra visible en oscuro (1,29 → 1,7:1 frente al lienzo); flecha de orden al pasar,
+  fuera del flujo (ancho de la tabla 660 px antes y durante).
+- **Flame → cabecera de jerarquía** (decisión del autor con el Flame a ancho completo delante):
+  en la demo, 2 filas — "Main agent · $7.86" y "24 subagents · 57.1 %" | "own work · 42.9 %" —
+  y la lista de 24 debajo. En la sesión real 0d6a5565 el trabajo propio del principal es el
+  93,9 %: los subagentes (6 %) y su anidación quedan por debajo de lo legible a este ancho; es el
+  dato, no un fallo.
