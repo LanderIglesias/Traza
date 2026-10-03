@@ -326,7 +326,11 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .j-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; }
 .j-head h3 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
 .j-cost { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
-.j-block { display: flex; flex-direction: column; gap: 8px; }
+.j-block { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+/* tarea | resultado: lado a lado si caben, apilados si no (el ancho del panel varía) */
+.j-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; align-items: start; }
+.j-pair .j-pre { max-height: 260px; }
+.j-costtime > :not(summary) + * { margin-top: 12px; }
 .j-block h4 { margin: 0; font-size: 13px; font-weight: 700; color: var(--ink-2); }
 .j-count { font-weight: 600; }
 .j-pre {

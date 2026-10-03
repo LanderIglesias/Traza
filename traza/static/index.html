@@ -143,19 +143,23 @@
                 <span class="j-cost" id="j-cost" title="Value at API prices of this agent's own requests"></span>
               </div>
             </header>
-            <div class="j-summary" id="j-summary"></div>
-            <div class="j-block" id="j-task-block">
-              <h4>Task</h4>
-              <pre class="j-pre" id="j-task"></pre>
+            <!-- juzgar el trabajo = lo que se pidió frente a lo que devolvió, lado a lado y arriba
+                 (critique F7: antes el resultado quedaba debajo de toda la timeline) -->
+            <div class="j-pair">
+              <div class="j-block" id="j-task-block">
+                <h4>Task</h4>
+                <pre class="j-pre" id="j-task"></pre>
+              </div>
+              <div class="j-block" id="j-result-block">
+                <h4 id="j-result-h">Returned to parent</h4>
+                <pre class="j-pre" id="j-result"></pre>
+              </div>
             </div>
+            <div class="j-summary" id="j-summary"></div>
             <div class="j-block">
               <h4>Timeline <span class="j-count" id="j-count"></span></h4>
               <button type="button" class="j-earlier" id="j-earlier" hidden>Load earlier turns</button>
               <ol class="timeline" id="j-items"></ol>
-            </div>
-            <div class="j-block" id="j-result-block">
-              <h4 id="j-result-h">Returned to parent</h4>
-              <pre class="j-pre" id="j-result"></pre>
             </div>
           </section>
         </div>

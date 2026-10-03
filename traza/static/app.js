@@ -724,7 +724,15 @@ function facts(cls, pairs) {
 function renderSummary(sm) {
   if (!sm) return $("j-summary").replaceChildren();
   const tok = (n) => (n == null ? "?" : n.toLocaleString("en-US"));
-  $("j-summary").replaceChildren(
+  // una línea con lo esencial y el detalle plegado (critique F7: seis cifras y dos barras iban
+  // antes que la tarea); el plegado sobrevive a los re-render de cada tick
+  const open = $("j-summary").querySelector("details")?.open ?? false;
+  const value = sm.value.parts ? money(sm.value.cost, sm.value.unpriced) : "?";
+  const box = el("details", { className: "details j-costtime" },
+    el("summary", { text: `Cost & time · ${value} · ${fmtDur(sm.active_s)} active · ${plural(sm.requests, "request")}` }));
+  box.open = open;
+  $("j-summary").replaceChildren(box);
+  box.append(
     facts("sum-facts", [
       ["Active time", fmtDur(sm.active_s)],
       ["Wall clock", `${fmtWhen(sm.wall_start)} → ${fmtWhen(sm.wall_end)}`],
