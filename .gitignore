@@ -21,3 +21,7 @@ __pycache__/
 
 # datos de demo (tools/make_demo_data.py)
 demo/
+
+# herramientas de diseño (impeccable) y restos de build de setuptools
+.impeccable/
+build/
