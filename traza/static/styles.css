@@ -356,6 +356,8 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .j-pre:empty::before { content: "Loading…"; color: var(--ink-2); }
 .j-pre[data-state="unavailable"] { color: var(--ink-2); font-style: italic; }
 .j-pre[data-state="truncated"]::after { content: "\A— truncated to 20,000 characters"; color: var(--ink-2); }
+.j-more { display: flex; flex-wrap: wrap; gap: 8px; }
+.j-more:not(:has(button:not([hidden]))) { display: none; }
 .j-earlier {
   width: fit-content; font: inherit; font-size: 13px; font-weight: 700; color: var(--ink);
   background: var(--sunk); border: 0; border-radius: 999px; padding: 5px 12px; cursor: pointer;

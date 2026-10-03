@@ -284,6 +284,8 @@ Posible historia para el README: el 92 % de los reintentos que funcionan **cambi
 - README, límites de lo que Claude Code escribe (no son bugs de traza): subagentes sin fin
   registrado en disco (3 de 93) se quedan en "idle" con tooltip; `output_tokens` mal escrito
   (aviso de plausibilidad); skill forks sin enlazar a su padre (decisión, design.md §6.1).
+- **Notas de F5: medidas el 03-10-2026** (findings "notas de la revisión de F5"): 1 arreglada, 2 y 4
+  sin acción, 3 y 5 con un problema de copia pendiente de decidir.
 - **Notas de la revisión de F5 — decidido (02-10-2026):** las dos que un usuario nota en su primera
   sesión van a F7 y se arreglan si fallan: (1) "Load earlier" y (2) el salto de scroll, verificadas
   en Chrome con una sesión real larga. Las otras tres (3)–(5) son **medir para saber**, no para

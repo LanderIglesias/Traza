@@ -466,6 +466,17 @@ $("j-back").addEventListener("click", () => {
     : ui.tab === "flame" ? `.fl[data-agent="${CSS.escape(aid)}"]`
     : `.tree tr[data-agent="${CSS.escape(aid)}"] .agent-open`)?.focus());
 });
+// "Load all": desde el principio (start_at=0); "latest 50": vuelve a la ventana por defecto
+$("j-all").addEventListener("click", () => {
+  const j = ui.judge;
+  j.from = 0; j.sig = "";
+  renderJudge();
+});
+$("j-latest").addEventListener("click", () => {
+  const j = ui.judge;
+  j.from = null; j.sig = "";
+  renderJudge();
+});
 $("j-earlier").addEventListener("click", async () => {
   const j = ui.judge;
   const r = await api(`/api/sessions/${encodeURIComponent(j.sid)}/agents/${encodeURIComponent(j.aid)}?before=${j.data.start}`);
@@ -523,7 +534,8 @@ function paintJudge(j, v) {
   const turns = v.items.filter((i) => i.kind === "turn").length;
   $("j-count").textContent = v.start > 0
     ? `· ${turns} turns shown, earlier ones hidden` : `· ${turns} turns`;
-  $("j-earlier").hidden = v.start === 0;
+  $("j-earlier").hidden = $("j-all").hidden = v.start === 0;
+  $("j-latest").hidden = j.from === null;
 
   const lastTurn = v.items.findLastIndex((i) => i.kind === "turn");
   const focusedKey = document.activeElement?.closest?.("#j-items details")?.dataset.key;

@@ -164,7 +164,12 @@
             <div class="j-summary" id="j-summary"></div>
             <div class="j-block">
               <h4>Timeline <span class="j-count" id="j-count"></span></h4>
-              <button type="button" class="j-earlier" id="j-earlier" hidden>Load earlier turns</button>
+              <!-- F5, nota 1: con 1.260 turnos, cargar todo eran 25 clics y no había vuelta atrás -->
+              <div class="j-more">
+                <button type="button" class="j-earlier" id="j-earlier" hidden>Load earlier turns</button>
+                <button type="button" class="j-earlier" id="j-all" hidden>Load all</button>
+                <button type="button" class="j-earlier" id="j-latest" hidden>Show only the latest 50</button>
+              </div>
               <ol class="timeline" id="j-items"></ol>
             </div>
           </section>

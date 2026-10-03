@@ -632,3 +632,25 @@ Regeneradas con el código actual (PARSER 15), reconstruyendo la caché en frío
   y la lista de 24 debajo. En la sesión real 0d6a5565 el trabajo propio del principal es el
   93,9 %: los subagentes (6 %) y su anidación quedan por debajo de lo legible a este ancho; es el
   dato, no un fallo.
+
+## F7 — notas de la revisión de F5, medidas (03-10-2026)
+
+1. **"Load earlier" (arreglado).** En el principal de 0d6a5565 (1.260 turnos): cargar todo eran
+   **25 clics y 36 s**, sin forma de volver a los últimos 50 (al reabrir el agente sí vuelve: bien).
+   Ahora "Load all" (una petición `start_at=0`: 0,86 s; la API tarda 0,69 s y manda 592 KB por
+   1.394 elementos) y "Show only the latest 50" (0,74 s).
+2. **Salto de scroll (no hay).** Demo en vivo, todos los turnos cargados, vista anclada en un turno
+   a mitad de lista: llegan ticks (52 → 53 turnos, la lista se reconstruye) y el turno sigue a
+   198 px. Los turnos nuevos van al final y el panel conserva su posición.
+3. **Arranque en frío (medido; problema de copia).** Demo, 1.018 líneas: panel con sesiones a
+   1,1 s. Disco real, ~113.000 líneas: el servidor responde a 1,05 s pero las sesiones llegan a
+   **10,1 s** (con otra instancia de traza leyendo los mismos ficheros a la vez; el escaneo solo,
+   3,2–6,2 s). **Mientras tanto el panel dice "No sessions on disk yet" y "0 of 0"** con 65
+   sesiones en disco: es falso, y es la primera pantalla de quien lo instala. Pendiente de decidir.
+4. **Render con salidas recortadas a 20.000 caracteres (medido).** Principal de 0d541f67 (líneas de
+   hasta 1,46 MB): desplegar con clics reales los 57 turnos visibles y pintar todo el texto, 3,5 s
+   (119 bloques, 3 recortados). Sin acción.
+5. **"The agent finished without writing any text" (visto; engaña en un caso real).** Sale en
+   pantalla como se diseñó. Pero los 10 casos del disco son subagentes que **sí** devolvieron un
+   informe, con la herramienta `SubagentHandback` en su último turno en vez de con texto: el
+   mensaje es literalmente cierto y hace creer que no devolvieron nada. Pendiente de decidir.
