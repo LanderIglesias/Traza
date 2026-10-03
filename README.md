@@ -2,10 +2,11 @@
 
 A local, read-only, live dashboard for Claude Code. It reads the session logs Claude Code already
 writes and shows every agent and subagent: what each one is doing now, what its tokens are worth
-at API prices, and what it actually did, so you can judge whether it did its job. Nothing leaves
+at API prices (what they would cost on Anthropic's API, not what you paid), and what it actually
+did, so you can judge whether it did its job. Nothing leaves
 your machine.
 
-Knowing what a session cost is easy. Knowing whether forty subagents did useful work is not:
+Knowing what a session cost is easy. Knowing whether dozens of subagents did useful work is not:
 traza puts each agent's task, tool calls, result and a few automatic signals side by side, live.
 
 ![The traza dashboard: sessions on the left, the agent tree of the selected session sorted by value, and the parser health bar at the bottom](docs/screenshot.png)
@@ -14,7 +15,7 @@ traza puts each agent's task, tool calls, result and a few automatic signals sid
 
 *Both images use synthetic sessions, not real logs.*
 
-**Status:** v0.0.1, early. Developed and tested on Windows 11 with logs from Claude Code
+**Status:** v0.1.0, early. Developed and tested on Windows 11 with logs from Claude Code
 2.1.226–2.1.288.
 
 ## Install
@@ -49,12 +50,14 @@ created, delete `~/.traza`.
 
 ## What it does
 
-- **Agent tree, live.** Every session with its agents and subagents, nested as they were
-  launched, each with its state (running a tool, thinking, idle, done), updated as Claude Code
-  writes. A Timeline tab shows when each agent was working.
+Each session has three tabs: **Tree** (agents nested as they were launched), **Timeline** (when
+each one was working) and **Flame** (a flame chart where width = value).
+
+- **Agent tree, live.** Every session with its agents and subagents, each with its state
+  (running a tool, thinking, idle, done), updated as Claude Code writes.
 - **Value per agent.** Tokens and their value at API prices, per request, agent and session, for
-  each agent alone and including the subagents it launched. The Flame tab (a flame chart:
-  width = value) makes forty subagents of the same type distinguishable at a glance.
+  each agent alone and including the subagents it launched. In the Flame tab, forty subagents of
+  the same type stop looking identical: each is as wide as its share of the value.
 - **Per-agent detail ("judgement view").** For any agent: the task it was given, its tool calls
   turn by turn, and what it returned to its parent. Long text is read from the log when you open
   it; the cache doesn't copy it.
@@ -136,8 +139,8 @@ where a task was split into 24 short subagents, the subagents took 57%.
 
 ## How it is built
 
-Two runtime dependencies, FastAPI and uvicorn: FastAPI + Server-Sent Events + SQLite (WAL), and
-plain HTML, CSS and JavaScript, with no build step, no frontend framework and no CDN. A watcher
+Two runtime dependencies: FastAPI and uvicorn. The stack is FastAPI + Server-Sent Events +
+SQLite (WAL), with plain HTML, CSS and JavaScript: no build step, no frontend framework, no CDN. A watcher
 reads new log lines every 0.5 s into a disposable cache: if it's ever corrupted or out of date,
 delete it and it is rebuilt from the logs, which are the source of truth. Log text is always
 rendered with `textContent`, never as HTML. Design decisions and the evidence behind them, in
