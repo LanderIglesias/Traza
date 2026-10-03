@@ -104,7 +104,8 @@ function renderCards(d) {
     const last = d.sessions[0];
     $("live-status").textContent = "Nothing running";
     // title: en móvil el texto se corta con "…"; así se puede leer entero
-    $("live-title").textContent = $("live-title").title = last ? `Last active: ${titleOf(last)}` : "No sessions on disk yet";
+    $("live-title").textContent = $("live-title").title = last ? `Last active: ${titleOf(last)}`
+      : d.scanning ? "Reading your Claude Code logs…" : "No sessions on disk yet";
     $("live-detail").textContent = last ? `${ago(last.last_activity)} · ${last.project}` : "";
     more.hidden = true;
   }
@@ -139,7 +140,9 @@ function renderRows(d) {
   $("sessions-count").textContent = `${rows.length} of ${d.sessions.length}`;
   const empty = $("rows-empty");
   empty.hidden = rows.length > 0;
-  empty.textContent = ui.filter === "live" ? "No session is working right now." : "No sessions on disk yet.";
+  // durante el primer escaneo "no hay sesiones" sería falso: se dice que se están leyendo (F5, nota 3)
+  empty.textContent = d.scanning ? "Reading your Claude Code logs… The first start builds the cache; it takes a few seconds."
+    : ui.filter === "live" ? "No session is working right now." : "No sessions on disk yet.";
   const list = rows.map((s) => {
     const btn = el("button", { type: "button", className: "row", "data-id": s.id, "aria-current": String(s.id === ui.selected) },
       el("span", { className: "row-title" },

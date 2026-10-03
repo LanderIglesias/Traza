@@ -113,12 +113,15 @@ def create_app(db_path, root, port: int, interval: float = 0.5,
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
     allowed_origins = {f"http://{h}" for h in allowed_hosts}
     hub = Hub()
-    state = {"generation": None, "tick": 0}
+    # scanning: hasta que termina el primer escaneo, "no hay sesiones" sería falso (F5, nota 3)
+    state = {"generation": None, "tick": 0, "scanning": True}
     # identificador de este arranque: la pestaña lo compara y se para si responde otro servidor
     run = secrets.token_hex(8)
 
     async def on_tick(stats: dict) -> None:
-        if stats["files_read"] or stats["deleted"]:  # solo si algo cambió
+        first = state["scanning"]
+        state["scanning"] = False
+        if first or stats["files_read"] or stats["deleted"]:  # algo cambió (o terminó el primer escaneo)
             state["tick"] += 1
             hub.publish({"id": state["tick"], "gen": state["generation"]})
 
@@ -163,7 +166,7 @@ def create_app(db_path, root, port: int, interval: float = 0.5,
     @app.get("/api/overview")
     def overview():
         with reader(db_path) as conn:
-            return {**views.overview(conn), "run": run}
+            return {**views.overview(conn), "run": run, "scanning": state["scanning"]}
 
     @app.get("/api/sessions/{session_id}")
     def session(session_id: str):

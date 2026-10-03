@@ -149,6 +149,17 @@ def test_serve_reserva_el_puerto_antes_de_arrancar(monkeypatch):
     assert seen["port"] == port
 
 
+def test_mientras_lee_por_primera_vez_el_panel_lo_sabe(tmp_path, monkeypatch, client):
+    # F5, nota 3: durante el primer escaneo (3–10 s con 113.000 líneas) el panel decía "No
+    # sessions on disk yet" con 65 sesiones en disco. Hasta el primer tick, scanning = True.
+    async def never_scans(*a, **k):
+        await asyncio.Event().wait()
+    monkeypatch.setattr(server, "watch", never_scans)
+    with TestClient(server.create_app(tmp_path / "t.db", tmp_path, port=PORT), base_url=BASE) as c:
+        assert c.get("/api/overview").json()["scanning"] is True
+    assert client.get("/api/overview").json()["scanning"] is False   # ya escaneó (la fixture lo espera)
+
+
 def test_cada_arranque_tiene_su_identificador(tmp_path):
     # Una pestaña que sobrevive a traza no debe obedecer al siguiente servidor del puerto (otro
     # traza u otro programa): compara este identificador y se para si cambia (auditoría F7).
