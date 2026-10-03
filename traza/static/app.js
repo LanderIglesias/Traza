@@ -913,21 +913,48 @@ function svgEl(tag, attrs = {}) {
   for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
   return n;
 }
+// Leyenda = índice de los agentes sin nombre visible en el Flame: agregados en "N more" y bloques
+// donde la etiqueta no cabe (critique F7: 24 de 25 bloques eran anónimos). En un panel ancho va en
+// una columna al lado (el Flame sigue siendo el protagonista, como en Perfetto o DevTools); en uno
+// estrecho, en un acordeón cerrado que se cierra al elegir un agente.
+const FLAME_ASIDE = 280, FLAME_GAP = 16, FLAME_WIDE = 640;
+const fitsIn = (label, w) => label.length * 7 + 12 <= w;
 function renderFlame(s) {
   const box = $("flame-chart");
-  const width = box.clientWidth || 600;
-  const sig = `${s.id}|${width}|${JSON.stringify(s.tree.map((n) => [n.id, n.parent, n.cost]))}`;
-  if (sig === flameSig && box.firstChild) return;      // nada cambió: conserva foco y hover
+  const panel = $("flame").clientWidth || 600;
+  const wide = panel >= FLAME_WIDE;
+  const sig = `${s.id}|${panel}|${JSON.stringify(s.tree.map((n) => [n.id, n.parent, n.cost]))}`;
+  if (sig === flameSig && box.firstChild) return;      // nada cambió: conserva foco, hover y acordeón
   flameSig = sig;
   const t0 = performance.now();
-  const rects = flameLayout(s.tree, { maxDepth: FLAME_DEPTH, minFrac: FLAME_MIN_PX / width });
+  const byId = new Map(s.tree.map((n) => [n.id, n]));
+  const labelOf = (r) => r.kind === "root" ? `Session · ${money(r.cost)}`
+    : r.kind === "own" ? `own work · ${money(r.cost)}`
+    : r.kind === "more" ? `${plural(r.n, "more agent")} · ${money(r.cost)}`
+    : `${agentName(byId.get(r.agent_id))} · ${money(r.cost)}`;
+  const blockW = (r, width) => Math.max(r.w * width - 1, 1);
+  const plan = (width) => {
+    const rects = flameLayout(s.tree, { maxDepth: FLAME_DEPTH, minFrac: FLAME_MIN_PX / width });
+    const unnamed = new Set(rects.filter((r) => r.kind === "more").flatMap((r) => r.ids));
+    for (const r of rects) if (r.kind === "agent" && !fitsIn(labelOf(r), blockW(r, width))) unnamed.add(r.agent_id);
+    return { width, rects, unnamed };
+  };
+  // la columna le quita ancho al Flame, y el ancho decide qué etiquetas caben: se calcula con el
+  // ancho que deja la columna y, si así no queda nadie sin nombre, a ancho completo y sin columna
+  let p = plan(wide ? panel - FLAME_ASIDE - FLAME_GAP : panel);
+  if (wide && !p.unnamed.size) p = plan(panel);
+  const { width, rects, unnamed } = p;
+  const aside = wide && unnamed.size > 0;
+  const legend = $("flame-more");
+  $("flame-body").classList.toggle("has-aside", aside);
   const unpriced = s.tree.filter((n) => n.cost === null || n.unpriced).length;
   $("flame-note").textContent = unpriced ? ` ${plural(unpriced, "agent")} with requests without a price count only what has one.` : "";
   if (!rects.length) {
+    legend.hidden = true;
     box.replaceChildren(el("p", { className: "sub", text: "No request in this session has a known price: nothing to size." }));
     return;
   }
-  const byId = new Map(s.tree.map((n) => [n.id, n]));
+  const choose = (aid) => { if (!aside) legend.open = false; openJudge(s.id, aid); };
   const depthOf = new Map(rects.filter((r) => r.agent_id).map((r) => [r.agent_id, r.y]));
   const rows = Math.max(...rects.map((r) => r.y)) + 1;
   const svg = svgEl("svg", { width, height: rows * FLAME_ROW, role: "group", "aria-label": "Agents sized by value at API prices" });
@@ -935,18 +962,15 @@ function renderFlame(s) {
   for (const r of rects) {
     const n = r.agent_id && byId.get(r.agent_id);
     const depth = r.kind === "own" ? depthOf.get(r.parent_id) : r.y;   // el coste propio, del color de su agente
-    const label = r.kind === "root" ? `Session · ${money(r.cost)}`
-      : r.kind === "own" ? `own work · ${money(r.cost)}`
-      : r.kind === "more" ? `${plural(r.n, "more agent")} · ${money(r.cost)}`
-      : `${agentName(n)} · ${money(r.cost)}`;
+    const label = labelOf(r);
     const tip = r.kind === "agent"
       ? `${agentName(n)}${n.description ? ` — ${n.description}` : ""}\n${money(r.cost)} incl. subagents (${pct(r.w)} of the session) · own ${money(r.own)}`
       : `${label} (${pct(r.w)} of the session)`;
     const g = svgEl("g", { class: `fl fl-${r.kind} fl-d${(depth ?? 0) % 5}` });
-    const x = r.x * width, w = Math.max(r.w * width - 1, 1), y = r.y * FLAME_ROW;
+    const x = r.x * width, w = blockW(r, width), y = r.y * FLAME_ROW;
     g.append(svgEl("rect", { x, y, width: w, height: FLAME_ROW - 2, rx: 4 }));
     const title = svgEl("title"); title.textContent = tip; g.append(title);
-    if (label.length * 7 + 12 <= w) {                      // la etiqueta, solo si cabe; si no, tooltip
+    if (fitsIn(label, w)) {                                   // la etiqueta, solo si cabe; si no, leyenda
       const t = svgEl("text", { x: x + 6, y: y + FLAME_ROW / 2 + 3 }); t.textContent = label; g.append(t);
     }
     if (r.kind === "agent") {
@@ -954,28 +978,30 @@ function renderFlame(s) {
       g.setAttribute("tabindex", "0");
       g.setAttribute("role", "button");
       g.setAttribute("aria-label", tip.replace("\n", ". "));
-      const open = () => openJudge(s.id, r.agent_id);
-      g.addEventListener("click", open);
-      g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+      g.addEventListener("click", () => choose(r.agent_id));
+      g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(r.agent_id); } });
     }
     svg.append(g);
   }
   box.replaceChildren(svg);
-  // leyenda: solo los agentes que no caben como bloque (agregados en "N more"), por valor
-  const small = rects.filter((r) => r.kind === "more").flatMap((r) => r.ids).map((id) => byId.get(id))
-    .sort((a, b) => (b.total?.cost || 0) - (a.total?.cost || 0));
-  $("flame-more").hidden = !small.length;
-  $("flame-more").replaceChildren(...(small.length ? [
-    el("h4", { id: "flame-more-h", text: `Too small to draw as a block: ${plural(small.length, "agent")} (with their subagents)` }),
-    el("ol", {}, ...small.map((n) => {
-      const v = n.total?.cost || 0;
+  legend.hidden = !unnamed.size;
+  if (unnamed.size) {
+    // al lado: siempre abierta (es el índice); en acordeón: cerrada salvo que el usuario la abriera
+    legend.open = aside || (legend.dataset.sid === s.id && legend.open);
+    legend.dataset.sid = s.id;
+    $("flame-more-h").textContent = `${plural(unnamed.size, "agent")} without a visible name`;
+    const list = [...unnamed].map((id) => byId.get(id)).sort((a, b) => (b.total?.cost || 0) - (a.total?.cost || 0));
+    $("flame-more-list").replaceChildren(...list.map((n) => {
       const row = el("button", { type: "button", className: "flame-more-row" },
-        el("span", { className: "who" }, el("b", { text: agentName(n) }), ...(n.description ? [el("span", { text: ` · ${n.description}` })] : [])),
+        // lo que distingue a un agente es su descripción (el tipo se repite: 17 "general-purpose")
+        el("span", { className: "who" }, el("b", { text: n.description || agentName(n) }),
+          ...(n.description ? [el("span", { text: agentName(n) })] : [])),
         el("span", { className: "num", text: money(n.total?.cost ?? null, n.total?.unpriced) }),
-        el("span", { className: "pct", text: pct(v / rects[0].cost) }));
-      row.addEventListener("click", () => openJudge(s.id, n.id));
+        el("span", { className: "pct", text: pct((n.total?.cost || 0) / rects[0].cost) }));
+      row.addEventListener("click", () => choose(n.id));
       return el("li", {}, row);
-    }))] : []));
+    }));
+  }
   box.dataset.rects = String(rects.length);
   box.dataset.renderMs = (performance.now() - t0).toFixed(1);
 }

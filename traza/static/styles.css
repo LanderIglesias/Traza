@@ -524,19 +524,26 @@ button.trace-bar { cursor: pointer; }
 .fl-agent { cursor: pointer; }
 .fl-agent:hover rect, .fl-agent:focus-visible rect { stroke: var(--focus); stroke-width: 2; }
 .fl-agent:focus { outline: none; }
-/* leyenda: solo los agentes que no caben como bloque (critique F7) */
-.flame-more { display: flex; flex-direction: column; gap: 6px; }
-.flame-more h4 { margin: 0; font-size: 13px; font-weight: 700; color: var(--ink-2); }
+/* leyenda = índice de los agentes sin nombre visible: columna al lado en un panel ancho, acordeón en
+   uno estrecho (critique F7) */
+.flame-body { display: flex; flex-direction: column; gap: 16px; }
+.flame-body.has-aside { display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: start; }
+.flame-more summary {
+  cursor: pointer; font-size: 13px; font-weight: 700; color: var(--ink-2); width: fit-content; border-radius: 6px;
+}
+.flame-more[open] summary { margin-bottom: 6px; }
 .flame-more ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.flame-body.has-aside .flame-more ol { max-height: 420px; overflow: auto; }
 .flame-more-row {
   display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 12px; align-items: baseline;
   width: 100%; text-align: left; font: inherit; font-size: 13px; color: var(--ink);
   background: none; border: 0; border-radius: 8px; padding: 6px 8px; cursor: pointer;
 }
 .flame-more-row:hover { background: var(--sunk); }
-.flame-more-row .who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flame-more-row .who { min-width: 0; display: flex; flex-direction: column; }
+.flame-more-row .who b, .flame-more-row .who span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .flame-more-row .who b { font-weight: 600; }
-.flame-more-row .who span { color: var(--ink-2); }
+.flame-more-row .who span { color: var(--ink-2); font-size: 12px; }
 .flame-more-row .num { font-variant-numeric: tabular-nums; font-weight: 600; }
 .flame-more-row .pct { font-variant-numeric: tabular-nums; color: var(--ink-2); min-width: 4.5em; text-align: right; }
 
