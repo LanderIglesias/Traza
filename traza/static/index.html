@@ -68,7 +68,10 @@
         <p class="empty" id="rows-empty" hidden></p>
       </section>
 
-      <section class="card panel" id="panel" aria-live="polite" aria-labelledby="panel-h">
+      <!-- única región viva: el panel se rehace en cada tick y, marcado entero como "live", el lector
+           de pantalla lo repetía; esto solo habla al elegir sesión o abrir un agente (critique F7) -->
+      <p class="sr-only" id="sr-status" role="status"></p>
+      <section class="card panel" id="panel" aria-labelledby="panel-h">
         <div class="panel-empty" id="panel-empty">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M3.5 9.5h17M8 14h5"/></svg>
           <h2 id="panel-h">Select a session</h2>

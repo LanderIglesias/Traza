@@ -310,9 +310,13 @@ for (const th of document.querySelectorAll(".tree th[data-sort]")) {
   });
 }
 
+const announce = (text) => { $("sr-status").textContent = text; };
+
 function select(id) {
   ui.selected = id;
   ui.judge = null;
+  const s = ui.data?.sessions.find((x) => x.id === id);
+  if (s) announce(`${titleOf(s)} selected, ${plural(s.agents, "agent")}`);
   renderRows(ui.data);
   renderPanel();
 }
@@ -429,6 +433,7 @@ let judgeSeq = 0;
 
 function openJudge(sid, aid, focusEvent = null) {
   ui.judge = { sid, aid, from: null, sig: "", open: new Map(), focus: focusEvent };
+  announce("Agent detail opened");
   // nada del agente anterior mientras llega el nuevo
   for (const id of ["j-title", "j-sub", "j-cost", "j-count"]) $(id).textContent = "";
   setContentId($("j-task"), null);
