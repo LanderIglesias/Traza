@@ -671,3 +671,16 @@ Regeneradas con el código actual (PARSER 15), reconstruyendo la caché en frío
    carpeta temporal de prueba con su `notes.txt`. Ahora solo borra si contiene lo que él genera.
 3. **Pestaña parada:** cada refresco y clic dejaban un error sin capturar en la consola; un
    manejador ignora ese rechazo concreto. Verificado: 0 errores tras clic con "traza stopped".
+
+## F7 — instalación limpia (03-10-2026)
+
+Desde un directorio temporal sin nada de traza y con `~/.traza/` renombrado aparte: venv nuevo +
+`pip install <repo>` (pipx y uv no están instalados; un venv propio es lo que pipx hace por dentro).
+- `traza --help` funciona; `traza serve --no-open` arranca sin `~/.traza/` y lo crea
+  (`traza.db` + `-wal`/`-shm`).
+- `/api/overview` respondió `scanning: true` y luego listó las sesiones a los 4,3 s (65 sesiones).
+- `/`, `app.js`, `flame.js`, `styles.css` → 200 (los estáticos van dentro del paquete instalado).
+- En navegador (Playwright): lista, sesión, pestañas Trace y Flame; conexión "Watching"; 0 errores JS.
+- Restaurado el `~/.traza` original; la caché de prueba queda en `~/.traza.clean-test` (borrable).
+
+Falta: `pipx install git+https://github.com/LanderIglesias/traza` real, cuando el repo esté publicado.
