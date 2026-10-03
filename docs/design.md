@@ -502,10 +502,13 @@ Decisiones de F3 (revisión del brief, 30-09-2026):
 - **Árbol:** colapsable; el estado de colapsado vive en memoria del JS y los ticks SSE no lo
   resetean. Coste: **propio en grande**; en nodos con hijos, **acumulado pequeño en gris**.
   Columnas ordenables (F4): **valor propio**, **incluidos subagentes** y **coste por token de
-  salida**; cada clic: mayor primero → menor primero → sin orden. Ordena hermanos dentro de su
+  salida**; cada clic: mayor primero → menor primero → sin orden. **Por defecto: incluidos
+  subagentes, mayor primero** (critique F7: "¿quién gasta?" de un vistazo); las cabeceras
+  ordenables van subrayadas en punteado (una flecha en cada una desbordaba la tabla). Ordena hermanos dentro de su
   padre (el árbol no se rompe). Sin test automático (JS de navegador, plan "Deudas").
-- **Vista de juicio:** encargo arriba, timeline de herramientas en medio, resultado devuelto al
-  padre abajo. Agrupada por turno, turnos cerrados plegados, últimos 50 turnos + "cargar
+- **Vista de juicio:** encargo y resultado devuelto al padre **lado a lado** bajo la cabecera
+  (apilados si no caben; critique F7: el resultado quedaba debajo de toda la timeline), una línea
+  plegada "Cost & time" con las cifras y las barras, y la timeline debajo. Agrupada por turno, turnos cerrados plegados, últimos 50 turnos + "cargar
   anteriores" (sin virtual scrolling en v1). Implementada en F5 (`views.agent_view`,
   `GET /api/sessions/{s}/agents/{a}`):
   - Se abre pulsando el nombre de un agente en el árbol; sustituye al árbol (nunca se apilan).
@@ -649,10 +652,14 @@ con 40 agentes del mismo tipo las etiquetas no distinguen, el **ancho** sí.
 - **Agregados:** hijos de menos de 3 px o más hondos que 8 niveles se juntan en un bloque "N more
   agents" (N cuenta también sus descendientes). El mínimo es en píxeles: en móvil se agrega más.
 - **Colores por profundidad** (5 tokens que se repiten, claro y oscuro), no por tipo ni estado.
-- **Etiqueta dentro si cabe; si no, tooltip** (`<title>` del SVG). Clic o Enter → vista de juicio
-  del agente; al volver, foco en el mismo bloque.
-- **Móvil:** el mismo flame a todo el ancho (sin lista ni scroll horizontal): la forma sigue
-  diciendo dónde va el valor, y tocar un bloque abre el agente (que lleva su nombre).
+- **Etiqueta dentro si cabe; si no, leyenda** (y `<title>` del SVG). La leyenda es el índice de
+  todos los agentes **sin nombre visible** (agregados en "N more" y bloques donde la etiqueta no
+  cabe), por valor, con descripción, $ y %: en un panel ≥ 640 px va en una columna de 280 px al
+  lado del Flame (el ancho del Flame se calcula descontándola; si así no queda nadie sin nombre,
+  sin columna); en uno estrecho, en un acordeón cerrado que se cierra al elegir un agente
+  (critique F7: 24 de 25 bloques eran anónimos). Clic o Enter → vista de juicio del agente; al
+  volver, foco en el mismo bloque.
+- **Móvil:** el mismo flame a todo el ancho (sin scroll horizontal) y la leyenda en acordeón.
 - **Layout = función pura** `flameLayout(tree)` (`static/flame.js`) → `[{x, y, w, h, agent_id,
   kind}]`; tests en `tests/flame.test.mjs` (`node --test`, lanzados desde pytest).
 - **Límite conocido:** cuando el principal se lleva casi todo (0d6a5565: 90 % es trabajo propio

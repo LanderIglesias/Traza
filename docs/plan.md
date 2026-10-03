@@ -188,6 +188,13 @@ sesiones y filtro 24 h / 7 d / todo.
    en la Timeline sale como una fila normal: el usuario lo percibe como un bug.
 3. **Brush para elegir una ventana de tiempo** sobre la vista de resumen; casi gratis tras el 1.
 
+**Del critique de F7, a v2** (no arreglado): URL con estado (recargar o "atrás" pierde sesión,
+pestaña y agente), atajos de teclado y filtro sobre los agentes, siguiente/anterior agente en la
+vista de juicio, objetivos táctiles de ≥ 24 px en móvil, la barra de salud fija tapa contenido a
+200 % de zoom, fallos de carga silenciosos ("Content unavailable" sin motivo). **Pregunta abierta:**
+¿la tarjeta negra debería mostrar el subagente activo más caro en vez del total del disco?
+(decidido: se queda como está en v1).
+
 **Deudas reconocidas (antes de F7):**
 - **El clic y el Enter del Flame (y de la Timeline) no tienen test automático:** el proyecto no
   tiene infraestructura de pruebas de navegador. Verificado a mano en Chrome (abre el agente, al

@@ -590,3 +590,27 @@ Regeneradas con el código actual (PARSER 15), reconstruyendo la caché en frío
   211 + 1 saltado. Es ejecutable sin Claude Code.
 - **Captura estática** `docs/screenshot.png` (51 KB, datos de demo) generada por
   `tools/record_demo.py` junto al GIF.
+
+## F7 — impeccable audit + critique (03-10-2026)
+
+- **Audit (técnico) 16/20.** Contraste 0 fallos en 4 vistas × escritorio/móvil × claro/oscuro;
+  0 desbordamientos; 0 controles sin nombre; detector 0 hallazgos en el código. Fallos: selección
+  de texto en oscuro 1,15:1 (color escrito a mano); objetivos táctiles < 24 px en móvil (P2).
+- **Critique (diseño) 25/40**, dos evaluaciones aisladas (diseño / detector+navegador). El
+  detector sobre la página renderizada da ~30 avisos, casi todos falsos positivos (texto dentro de
+  `<details>` cerrados conserva su caja); el escaneo por URL no puede correr con traza (la
+  conexión SSE nunca deja la red en reposo; la herramienta lo informa como "limpio").
+- **Arreglado (5 pasos, cada uno verificado con Playwright en escritorio/móvil y claro/oscuro):**
+  1. barra "Where the value goes" proporcional también con total < $1 (`flex-grow` que suma < 1
+     solo reparte esa fracción: a $0,09 la barra se llenaba ~9 %); selección y scrollbar como
+     tokens; `title` en el título en vivo;
+  2. el panel deja de ser región viva (se rehacía en cada tick); una línea de estado para lectores
+     de pantalla (accesibilidad por completitud: tooltips sin cambiar, sin prueba con NVDA);
+  3. vista de juicio con tarea | resultado lado a lado; "Cost & time" plegado;
+  4. árbol ordenado por valor incl. subagentes por defecto; herramientas en ámbar frente al morado
+     del modelo; gama propia para las partes del valor; leyenda del Flame con los agentes sin
+     nombre visible (al lado en panel ancho, acordeón en estrecho).
+     **La primera versión de la leyenda ("solo los de N more") salía vacía en escritorio**: el
+     anonimato venía de no tener etiqueta, no de estar agregado. Se paró y se cambió;
+  5. GIF y captura regrabados. Al regrabar: las flechas ↕ en cada cabecera desbordaban la tabla
+     con la pastilla "Running tool" → subrayado punteado (sin ancho).

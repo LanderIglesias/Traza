@@ -292,8 +292,9 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .tree th[aria-sort] button { color: var(--ink); }
 .tree th[aria-sort="descending"] button::after { content: " ↓"; }
 .tree th[aria-sort="ascending"] button::after { content: " ↑"; }
-/* las cabeceras ordenables se ven ordenables antes de pulsarlas (critique F7) */
-.tree th[data-sort]:not([aria-sort]) button::after { content: " ↕"; color: var(--ink-3); }
+/* las cabeceras ordenables se ven ordenables antes de pulsarlas (critique F7), sin gastar ancho: una
+   flecha en cada una desbordaba la tabla con la pastilla "Running tool" */
+.tree th[data-sort] button { text-decoration: underline dotted var(--ink-3); text-underline-offset: 4px; }
 .tree td { padding: 9px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .tree .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tree td.num { font-weight: 600; }

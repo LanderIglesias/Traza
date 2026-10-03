@@ -54,9 +54,8 @@ def main() -> None:
             page.goto(URL)
             page.click(f'[data-id="{session.sid}"]')
             page.wait_for_selector("#tree-rows tr")
-            # ordenado por valor propio: los subagentes nuevos salen abajo y suben mientras gastan,
-            # con las cabeceras de la tabla a la vista
-            page.click('.tree th[data-sort="cost"] button')
+            # el árbol ya viene ordenado por valor: los subagentes nuevos salen abajo y suben
+            # mientras gastan, con las cabeceras de la tabla a la vista
             page.wait_for_timeout(1200)
             start = time.monotonic() - t0                  # aquí empieza el GIF
             runner = threading.Thread(target=demo.live, args=(session,))
