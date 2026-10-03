@@ -229,8 +229,16 @@ BIG = [
 ]
 
 
+DEMO_ENTRIES = {"projects", "traza.db", "traza.db-wal", "traza.db-shm"}
+
+
 def build(out: Path) -> Log:
+    # solo se borra una carpeta que contiene lo que este generador escribe: `make_demo_data.py .`
+    # se llevaría el repositorio, y `~` la carpeta personal (/code-review de F7)
     if out.exists():
+        extra = {p.name for p in out.iterdir()} - DEMO_ENTRIES
+        if extra:
+            raise SystemExit(f"{out} contains {sorted(extra)[:3]}…: not a demo folder; pick an empty or new one")
         shutil.rmtree(out)
     root, rnd = out / "projects", random.Random(7)
     for proj, title, hours_ago, ask, plan in OLD:

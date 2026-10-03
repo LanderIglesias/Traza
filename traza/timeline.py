@@ -126,12 +126,14 @@ def breakdown(events: list[dict]) -> dict[str, float]:
     return out
 
 
-def segments(events: list[dict], axis: ActiveAxis) -> list[list]:
+def segments(events: list[dict], axis: ActiveAxis, open_tool: bool = False) -> list[list]:
     """Barra continua de un agente en el eje común: tramos [inicio, fin, quién, evento] con la
     misma regla que `breakdown` (suman lo mismo). Una marca por turno salía sub-píxel en sesiones
     de horas. Las pausas no se dibujan; tramos seguidos del mismo tipo se funden (no a través de
-    una pausa); `evento` es el primero del tramo: pulsar lleva ahí. Una herramienta aún sin
-    resultado sigue abierta hasta el final del eje."""
+    una pausa); `evento` es el primero del tramo: pulsar lleva ahí. `open_tool`: el agente tiene
+    ahora mismo una herramienta en vuelo (estado en vivo, views._agent_states); solo entonces su
+    tramo sigue abierto hasta el final del eje. Sin eso, un subagente parado con una llamada sin
+    respuesta pintaba horas de herramienta mientras otro agente alargaba el eje (/code-review F7)."""
     out, cut, spans = [], True, running(events)
     for prev, nxt, a, b in _gaps(events):
         kind = _gap_kind(prev, nxt)
@@ -153,7 +155,7 @@ def segments(events: list[dict], axis: ActiveAxis) -> list[list]:
                and e["request_id"] == last_req and e["tool_name"] not in WAITS_FOR_USER
                and e.get("tool_use_id") not in results]
     last = axis.offset(events[-1]["ts"]) if events else None
-    if pending and last is not None and axis.total > last:
+    if open_tool and pending and last is not None and axis.total > last:
         if out and not cut and out[-1][2] == "tool" and out[-1][1] == last:
             out[-1][1] = axis.total
         else:

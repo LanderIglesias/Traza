@@ -583,7 +583,7 @@ def _iso_s(secs: float | None) -> str | None:
         timespec="seconds")
 
 
-def session_timeline(conn, session_id: str) -> dict | None:
+def session_timeline(conn, session_id: str, now: float | None = None) -> dict | None:
     """Timeline de una sesión (F6.5): un eje de tiempo activo COMÚN a todos sus agentes (los
     subagentes en paralelo caen en paralelo) y la barra continua de cada uno."""
     by_agent = _timeline_events(conn, session_id)
@@ -592,9 +592,12 @@ def session_timeline(conn, session_id: str) -> dict | None:
     axis = tl.ActiveAxis((e["ts"] for evs in by_agent.values() for e in evs),
                          busy=_busy(by_agent))
     breaks = [{"at": round(b["at"], 1), "idle_s": round(b["idle_s"])} for b in axis.breaks]
+    # el tramo de una herramienta solo sigue abierto si el agente la tiene en vuelo ahora (§7.1)
+    states = _agent_states(conn, time.time() if now is None else now)[0]
     return {"axis": {"total": axis.total, "breaks": breaks,
                      "start": _iso_s(axis.start), "end": _iso_s(axis.end)},
-            "agents": {aid: {"segments": tl.segments(evs, axis),
+            "agents": {aid: {"segments": tl.segments(
+                                 evs, axis, open_tool=states.get((session_id, aid)) == "tool"),
                              "breakdown": tl.breakdown(evs)} for aid, evs in by_agent.items()}}
 
 

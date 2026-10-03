@@ -221,8 +221,13 @@ def test_tramo_de_herramientas_en_paralelo_llega_al_ultimo_resultado():
     segs = timeline.segments(evs, timeline.ActiveAxis(e["ts"] for e in evs))
     assert segs[-1][1:3] == [60, "tool"]               # el Bash largo, no el Read
     # con el Bash aún en marcha, el tramo de herramienta sigue abierto hasta el final del eje
-    segs = timeline.segments(evs[:4], timeline.ActiveAxis([at(0), at(2), at(3), at(4), at(30)]))
+    axis30 = timeline.ActiveAxis([at(0), at(2), at(3), at(4), at(30)])
+    segs = timeline.segments(evs[:4], axis30, open_tool=True)
     assert segs[-1][1:3] == [30, "tool"]
+    # /code-review de F7: si el agente ya no tiene esa herramienta en vuelo (terminó, o se paró y
+    # el eje lo alarga otro agente), no se inventa tiempo de herramienta hasta el final
+    segs = timeline.segments(evs[:4], axis30)
+    assert segs[-1][1] == 4
 
 
 # --- revisión de F6.5 (antes de F7): una barra continua por agente, no una marca por turno ---------

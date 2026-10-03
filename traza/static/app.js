@@ -385,6 +385,9 @@ function stopped() {
   return ui.data;
 }
 const api = (url) => live.stopped ? Promise.reject(new Error("traza stopped")) : fetch(url);
+// parada, cada refresco o clic rechaza a propósito (el indicador ya dice "reload the page"): no
+// es un error que mostrar; cualquier otro sigue saliendo en la consola (/code-review de F7)
+addEventListener("unhandledrejection", (e) => { if (e.reason?.message === "traza stopped") e.preventDefault(); });
 
 function setConn(state) {
   $("conn").dataset.state = state;

@@ -659,3 +659,15 @@ Regeneradas con el código actual (PARSER 15), reconstruyendo la caché en frío
   verificado en frío con el disco real (las 65 sesiones aparecen solas al terminar, sin recargar).
   (5) el resultado de un subagente que entrega con `SubagentHandback` es ese informe, leído como
   texto; verificado con el crítico de cobertura de la auditoría (7.546 caracteres). Tests de los dos.
+
+## F7 — /code-review de F7 (07ac45f..HEAD), 3 hallazgos, corregidos (03-10-2026)
+
+1. **Timeline:** una llamada sin respuesta en la última respuesta de un agente se pintaba abierta
+   hasta el final del eje común aunque el agente estuviera parado (otro agente alargaba el eje):
+   horas de "herramienta" inventadas que el desglose no tenía. Ahora `segments(..., open_tool)` y
+   `session_timeline` se lo dice con el estado en vivo (§7.1). Test.
+2. **Generador de demo:** borraba sin mirar la carpeta indicada (`make_demo_data.py .` se llevaba
+   el repositorio). Visto en la verificación: un primer intento, con el Edit bloqueado, borró la
+   carpeta temporal de prueba con su `notes.txt`. Ahora solo borra si contiene lo que él genera.
+3. **Pestaña parada:** cada refresco y clic dejaban un error sin capturar en la consola; un
+   manejador ignora ese rechazo concreto. Verificado: 0 errores tras clic con "traza stopped".
