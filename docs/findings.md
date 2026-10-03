@@ -566,6 +566,10 @@ Regeneradas con el código actual (PARSER 15), reconstruyendo la caché en frío
   pausa de 18 h sin cambiar su `startTime`; traza cuenta bien, el supuesto del oráculo ("desde
   `startTime`") es el que falla. Contando desde el reinicio, 3 de 4 cuadran exacto. El test no se
   cambia: una regla para detectar reinicios sacada de un solo caso sería inventar.
+- **Subagentes sin fin registrado, re-medido** (misma caché recién reconstruida, `agent_tree` de las
+  65 sesiones): 128 de 131 subagentes "done" (109 normales + 19 huérfanos de skill fork); los 3
+  restantes son los mismos 3 de siempre, los tres en e093c05a, en "idle". (El "3 de 93" de F4 era
+  con menos subagentes en disco.)
 - **Instalación en limpio** (venv nuevo, `pip install .`): el paquete trae los 5 estáticos
   (incl. `flame.js`) y `prices.toml`, crea `traza`, y servido así responde `/`, los estáticos y
   la API con datos. [sin verificar] `pipx install git+https://…`: el repo aún no está publicado.
