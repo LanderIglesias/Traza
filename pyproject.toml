@@ -13,7 +13,7 @@ authors = [{name = "Lander Iglesias"}]
 dependencies = ["fastapi>=0.110", "uvicorn>=0.29"]
 
 [project.optional-dependencies]
-dev = ["pytest", "httpx"]
+dev = ["pytest", "httpx", "tzdata; sys_platform == 'win32'"]  # tzdata: los tests usan zonas con nombre; Windows no trae base de zonas
 # solo para regrabar docs/demo.gif (tools/record_demo.py); además: `playwright install chromium` y ffmpeg
 demo = ["playwright"]
 

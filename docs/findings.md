@@ -699,3 +699,12 @@ Pestaña `traza` en agent-hub (`IsolatedProcessConnector`, repo aparte). Lo que 
   "Watching" (SSE en vivo dentro del iframe), pestañas Tree/Flame; 0 errores de CSP en consola;
   modo demo tapa la pestaña; Parar libera el 7420.
 - No probado: la ventana nativa (`run_native.py`, WebView2) — solo el modo servidor en Chromium.
+
+## pipx y Python 3.14 (04-10-2026)
+
+`pipx install git+https://github.com/LanderIglesias/traza` (pipx 1.16.7, con Python 3.14.6):
+`traza` queda en el PATH; desde otra carpeta sirve el panel (65 sesiones, "Watching", Tree/
+Timeline/Flame, favicon, 0 errores JS). Suite en un venv limpio de 3.14: 1 fallo, el test del
+cambio de hora: `ZoneInfo("Europe/Madrid")` sin `tzdata` (Windows no trae base de zonas; en el
+venv de 3.12 venía de rebote con pandas). Solo afecta a los tests: el código usa la hora local
+del sistema (`astimezone()`). `tzdata` va en `[dev]` solo en Windows. 221/221 en 3.12 y 3.14.
