@@ -684,3 +684,16 @@ Desde un directorio temporal sin nada de traza y con `~/.traza/` renombrado apar
 - Restaurado el `~/.traza` original; la caché de prueba queda en `~/.traza.clean-test` (borrable).
 
 Falta: `pipx install git+https://github.com/LanderIglesias/traza` real, cuando el repo esté publicado.
+
+## traza en agent-hub (04-10-2026)
+
+Pestaña `traza` en agent-hub (`IsolatedProcessConnector`, repo aparte). Lo que obligó a cambiar:
+- traza no se dejaba incrustar (`frame-ancestors 'none'`): nueva opción `--allow-frame ORIGIN`,
+  validada como origen (va dentro de la CSP). La ventana nativa del hub usa un puerto libre
+  distinto en cada arranque, de ahí el puerto `*`.
+- Primer intento real: "No module named traza" y la pestaña en STARTING para siempre: el venv
+  tenía las dependencias pero no traza instalado. El hub lo arranca con `cwd` en el repo.
+- Verificado con el hub real y Playwright: Arrancar → iframe a los 1,9 s, 65 sesiones,
+  "Watching" (SSE en vivo dentro del iframe), pestañas Tree/Flame; 0 errores de CSP en consola;
+  modo demo tapa la pestaña; Parar libera el 7420.
+- No probado: la ventana nativa (`run_native.py`, WebView2) — solo el modo servidor en Chromium.

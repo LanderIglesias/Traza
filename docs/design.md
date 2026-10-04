@@ -763,6 +763,11 @@ queda ninguna, el test se salta con ese motivo. Las copias (sesiones que compart
   XSS (solo `textContent` + CSP `script-src 'self'` sin inline), sin CSRF (todo es GET de solo
   lectura), sin traversal (el id de sesión solo llega a SQLite como parámetro).
 - **Todo** el texto de los JSONL se pinta con `textContent`, nunca `innerHTML` (XSS).
+- Iframe: `frame-ancestors 'none'` por defecto. `--allow-frame ORIGIN` deja incrustarlo a un
+  único origen (agent-hub, con `http://127.0.0.1:*` porque su ventana cambia de puerto); el valor
+  se valida como origen porque va dentro de la cabecera CSP (un `;` colaría directivas). Riesgo
+  aceptado: una página de otro puerto local podría incrustarlo, pero quien ya sirve algo en
+  127.0.0.1 puede leer `~/.claude` directamente, y el panel no tiene acciones que forzar.
 - `Cache-Control: no-cache` en la página y los estáticos (F6): sin él, Chrome reutilizó por caché
   heurística un `index.html` viejo con un `app.js` nuevo y la página se rompió al actualizar.
 - Solo lectura sobre `~/.claude/`: traza nunca escribe ahí.

@@ -1,5 +1,6 @@
 """traza serve | scan | report — punto de entrada (`python -m traza` o `traza`)."""
 import argparse
+import re
 import socket
 import sys
 import threading
@@ -28,6 +29,8 @@ def main(argv=None) -> int:
     serve.add_argument("--db", type=Path, default=DEFAULT_DB)
     serve.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     serve.add_argument("--no-open", action="store_true", help="do not open the browser")
+    serve.add_argument("--allow-frame", type=origin, metavar="ORIGIN",
+                       help="let this origin embed the panel in an iframe (e.g. agent-hub)")
     sub.add_parser("scan", help="build/refresh the cache and print what it holds")
     sub.add_parser("report", help="tokens and estimated cost of one session file")
     args = ap.parse_args(argv)
@@ -52,8 +55,18 @@ def main(argv=None) -> int:
     print(f"traza on {url}  (cache: {args.db}, reading: {args.root})")
     if not args.no_open:
         threading.Thread(target=_open_when_ready, args=(url,), daemon=True).start()
-    make_server(create_app(args.db, args.root, port=args.port), args.port).run(sockets=[sock])
+    app = create_app(args.db, args.root, port=args.port, frame_origin=args.allow_frame)
+    make_server(app, args.port).run(sockets=[sock])
     return 0
+
+
+def origin(value: str) -> str:
+    """Un origen y nada más (esquema://host[:puerto], puerto "*" = cualquiera: la ventana de
+    agent-hub cambia de puerto en cada arranque). El valor va dentro de la cabecera CSP, y un ";"
+    o un espacio colarían directivas nuevas."""
+    if not re.fullmatch(r"https?://[A-Za-z0-9.-]+(:([0-9]{1,5}|\*))?", value):
+        raise argparse.ArgumentTypeError(f"not an origin like http://127.0.0.1:8090: {value!r}")
+    return value
 
 
 def _open_when_ready(url: str, tries: int = 50) -> None:

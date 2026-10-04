@@ -24,7 +24,7 @@ STATIC = Path(__file__).parent / "static"
 HEARTBEAT_S = 15
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; "
        "img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; "
-       "frame-ancestors 'none'")
+       "frame-ancestors ")
 
 
 @contextmanager
@@ -108,8 +108,11 @@ async def sse_stream(hub: Hub, requested_gen, current_gen, heartbeat: float, is_
 
 
 def create_app(db_path, root, port: int, interval: float = 0.5,
-               heartbeat: float = HEARTBEAT_S) -> FastAPI:
+               heartbeat: float = HEARTBEAT_S, frame_origin: str | None = None) -> FastAPI:
+    """`frame_origin`: el único origen que puede incrustar el panel en un iframe (agent-hub);
+    sin él, nadie. Ya validado como origen (__main__.origin): va tal cual a la cabecera."""
     db_path = Path(db_path)
+    csp = CSP + (frame_origin or "'none'")
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
     allowed_origins = {f"http://{h}" for h in allowed_hosts}
     hub = Hub()
@@ -151,7 +154,7 @@ def create_app(db_path, root, port: int, interval: float = 0.5,
         if origin is not None and origin not in allowed_origins:
             return PlainTextResponse("bad origin", status_code=403)
         response = await call_next(request)
-        response.headers["Content-Security-Policy"] = CSP
+        response.headers["Content-Security-Policy"] = csp
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         # revalidar siempre (ETag): un index.html viejo en caché con un app.js nuevo rompe la

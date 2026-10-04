@@ -277,3 +277,32 @@ def test_pagina_y_estaticos_se_revalidan_siempre(client):
     # el ETag en cada carga, gratis en local.
     for path in ("/", "/static/app.js", "/static/styles.css"):
         assert client.get(path).headers["cache-control"] == "no-cache", path
+
+
+def test_incrustar_en_un_iframe_solo_desde_el_origen_permitido(tmp_path):
+    # agent-hub muestra traza en un iframe: por defecto nadie puede incrustarlo (clickjacking,
+    # auditoría F7); con --allow-frame, solo ese origen.
+    def csp(**kw):
+        with TestClient(server.create_app(tmp_path / "t.db", tmp_path, port=PORT, **kw),
+                        base_url=BASE) as c:
+            return c.get("/").headers["content-security-policy"]
+    assert "frame-ancestors 'none'" in csp()
+    hub = csp(frame_origin="http://127.0.0.1:8090")
+    assert hub.endswith("; frame-ancestors http://127.0.0.1:8090")
+
+
+@pytest.mark.parametrize("bad", ["http://127.0.0.1:8090; script-src *", "javascript:alert(1)",
+                                 "http://127.0.0.1:8090/path", "*", "127.0.0.1:8090"])
+def test_allow_frame_rechaza_lo_que_no_es_un_origen(bad, capsys):
+    # el valor acaba dentro de la cabecera CSP: un ";" colaría directivas nuevas
+    from traza.__main__ import main
+    with pytest.raises(SystemExit) as e:
+        main(["serve", "--allow-frame", bad])
+    assert e.value.code == 2 and "origin" in capsys.readouterr().err
+
+
+def test_allow_frame_acepta_cualquier_puerto_local():
+    # la ventana nativa de agent-hub escucha en un puerto libre distinto en cada arranque
+    from traza.__main__ import origin
+    assert origin("http://127.0.0.1:*") == "http://127.0.0.1:*"
+    assert origin("http://127.0.0.1:8777") == "http://127.0.0.1:8777"

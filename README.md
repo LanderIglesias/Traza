@@ -41,6 +41,7 @@ new lines.
 traza serve                    # the dashboard; Ctrl+C to stop
 traza serve --port 7421        # if 7420 is taken (traza says so and exits)
 traza serve --no-open          # don't open the browser
+traza serve --allow-frame http://127.0.0.1:*   # let a local page embed it (e.g. a launcher)
 traza scan                     # build or refresh the cache and print what it holds
 traza report SESSION.jsonl     # tokens and value per model of one session, straight from the log
 ```
