@@ -497,6 +497,12 @@ Decisiones de F3 (revisión del brief, 30-09-2026):
   pixelada". Escala: 12 / 13 / 14 / 16 / 20 / 22 / 28 px (antes 12 tamaños, cinco a menos de
   1,5 px entre sí); el peso 800 solo en display (antes en 25 sitios). Ninguna petición a CDNs
   ni a Google Fonts (100 % local).
+- **Marca (04-10-2026):** sin glifo; la identidad es la tipografía y el coral. Cuatro rondas de
+  icono (dibujado y de librerías: Lucide, Phosphor, Tabler, Heroicons, filtrados a 16 px reales)
+  acabaron evocando otra cosa: tendencia financiera, garabato, la curva de Figma, compartir,
+  git, GPS. Favicon (`static/favicon.svg`): la "t" de Manrope 800 en coral, contorno extraído
+  de la fuente con fontTools (OFL), no redibujado; coincide con la letra de la fuente al 99,4 %
+  de los píxeles a 180 px. Wordmark: "traza" en Manrope, sin punto ni acento añadido.
 - **Idioma de la interfaz:** inglés.
 
 - **Árbol:** colapsable; el estado de colapsado vive en memoria del JS y los ticks SSE no lo

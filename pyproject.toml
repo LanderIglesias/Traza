@@ -27,7 +27,7 @@ traza = "traza.__main__:main"
 packages = ["traza"]
 
 [tool.setuptools.package-data]
-traza = ["prices.toml", "static/*.html", "static/*.css", "static/*.js", "static/fonts/*"]
+traza = ["prices.toml", "static/*.html", "static/*.css", "static/*.js", "static/*.svg", "static/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
