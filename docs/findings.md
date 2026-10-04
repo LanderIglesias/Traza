@@ -683,7 +683,9 @@ Desde un directorio temporal sin nada de traza y con `~/.traza/` renombrado apar
 - En navegador (Playwright): lista, sesión, pestañas Trace y Flame; conexión "Watching"; 0 errores JS.
 - Restaurado el `~/.traza` original; la caché de prueba queda en `~/.traza.clean-test` (borrable).
 
-Falta: `pipx install git+https://github.com/LanderIglesias/traza` real, cuando el repo esté publicado.
+Publicado el 04-10-2026: `pip install git+https://github.com/LanderIglesias/traza` en un venv
+nuevo instala, arranca y sirve el panel (65 sesiones, estáticos, favicon y fuente → 200).
+`pipx` no se ha probado (no está instalado en esta máquina); hace lo mismo con su propio venv.
 
 ## traza en agent-hub (04-10-2026)
 
