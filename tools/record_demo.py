@@ -73,7 +73,7 @@ def main() -> None:
         OUT.parent.mkdir(exist_ok=True)
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{start:.2f}", "-t", f"{end - start:.2f}",
                         "-i", video, "-vf", "fps=12,scale=1000:-1:flags=lanczos,split[a][b];"
-                        "[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4",
+                        "[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle",
                         str(OUT)], check=True)
         print(f"{OUT}  ·  {end - start:.1f} s  ·  {OUT.stat().st_size / 1e6:.1f} MB")
     finally:

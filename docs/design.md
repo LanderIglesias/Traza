@@ -502,7 +502,10 @@ Decisiones de F3 (revisión del brief, 30-09-2026):
   acabaron evocando otra cosa: tendencia financiera, garabato, la curva de Figma, compartir,
   git, GPS. Favicon (`static/favicon.svg`): la "t" de Manrope 800 en coral, contorno extraído
   de la fuente con fontTools (OFL), no redibujado; coincide con la letra de la fuente al 99,4 %
-  de los píxeles a 180 px. Wordmark: "traza" en Manrope, sin punto ni acento añadido.
+  de los píxeles a 180 px. Barra lateral: la misma "t", blanca sobre el círculo `--night`.
+  Wordmark: "traza" en Manrope, sin punto ni acento añadido; en el README, texto plano (`# traza`):
+  un SVG con Manrope necesitaría una versión por tema para no quedar negro sobre el modo oscuro
+  de GitHub.
 - **Idioma de la interfaz:** inglés.
 
 - **Árbol:** colapsable; el estado de colapsado vive en memoria del JS y los ticks SSE no lo
